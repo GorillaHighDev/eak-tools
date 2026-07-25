@@ -316,7 +316,7 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
     <div id="size-rows"></div>
     <button type="button" id="add-size-btn">+ Add another size</button>
 
-    <div class="step-label" style="margin-top:18px">Photos — front/back/tag, covers every size above <span class="req">*</span></div>
+    <div class="step-label" style="margin-top:18px">Photos — front/back/tag, covers every size above <span class="req">*</span> <span class="mono" style="text-transform:none;letter-spacing:0;color:var(--concrete);font-size:.7rem">(not required if already on file below)</span></div>
     <div id="existing-photos-wrap" style="display:none">
       <div id="existing-photos-label" class="mono"></div>
       <div id="existing-photos"></div>
@@ -564,7 +564,7 @@ async function loadKnownItems() {
     const rows = parseCSV(text);
     if (rows.length < 2) continue;
     const header = rows[0].map(h => h.trim().toLowerCase());
-    const idx = { barcode: header.indexOf('barcode'), price: header.indexOf('price'), brand: header.indexOf('brand'), size: header.indexOf('size') };
+    const idx = { barcode: header.indexOf('barcode'), price: header.indexOf('price'), brand: header.indexOf('brand'), size: header.indexOf('size'), notes: header.indexOf('notes') };
     if (idx.barcode === -1 || idx.price === -1) continue;
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
@@ -574,6 +574,7 @@ async function loadKnownItems() {
         price: (r[idx.price] || '').trim(),
         brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
         size: idx.size > -1 ? (r[idx.size] || '').trim() : '',
+        notes: idx.notes > -1 ? (r[idx.notes] || '').trim() : '',
       };
     }
   }
@@ -584,7 +585,7 @@ async function loadKnownItems() {
 // Checks today's session first (most current), then the OneDrive-wide cache.
 function getKnownItem(barcode) {
   const fromSession = sessionItems.slice().reverse().find(i => i.barcode === barcode);
-  if (fromSession) return { price: fromSession.price, brand: fromSession.brand, size: fromSession.size };
+  if (fromSession) return { price: fromSession.price, brand: fromSession.brand, size: fromSession.size, notes: fromSession.notes };
   return knownItems[barcode] || null;
 }
 
@@ -827,10 +828,12 @@ const existingPhotosWrap = document.getElementById('existing-photos-wrap');
 const existingPhotosLabel = document.getElementById('existing-photos-label');
 const existingPhotosEl = document.getElementById('existing-photos');
 let existingPhotoUrls = [];
+let existingPhotosConfirmed = false;
 
 function clearExistingPhotos() {
   existingPhotoUrls.forEach(url => URL.revokeObjectURL(url));
   existingPhotoUrls = [];
+  existingPhotosConfirmed = false;
   existingPhotosEl.innerHTML = '';
   existingPhotosWrap.style.display = 'none';
 }
@@ -844,6 +847,8 @@ async function loadExistingPhotos(barcode) {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   if (imageFiles.length === 0) return;
 
+  existingPhotosConfirmed = true;
+  updateSaveState(); // don't wait on thumbnail downloads below to unlock Save
   existingPhotosLabel.textContent = `Already has ${imageFiles.length} photo${imageFiles.length > 1 ? 's' : ''} on file:`;
   existingPhotosWrap.style.display = 'block';
 
@@ -1046,6 +1051,7 @@ function lockBarcode(val) {
   if (val !== currentGeneratedSKU && known) {
     fPrice.value = known.price;
     fBrand.value = known.brand;
+    fNotes.value = known.notes || '';
   }
   resetPhotos();
   clearExistingPhotos();
@@ -1107,7 +1113,7 @@ fieldChain.forEach((field, i) => {
 function updateSaveState() {
   const priceOk = fPrice.value.trim() !== '' && !isNaN(parseFloat(fPrice.value));
   const rowsValid = getValidSizeRows().length > 0;
-  const photosOk = attachedFiles.length > 0;
+  const photosOk = attachedFiles.length > 0 || existingPhotosConfirmed;
   const oneDriveOk = !!msalInstance.getActiveAccount();
   saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid && photosOk && oneDriveOk);
 
