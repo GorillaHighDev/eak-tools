@@ -38,6 +38,29 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 #manual-toggle{display:block;margin:6px auto 0;background:none;border:none;color:var(--concrete);
   font-family:inherit;font-size:.75rem;text-decoration:underline;cursor:pointer}
 
+.barcode-row{margin-bottom:10px}
+.barcode-row-top{display:flex;gap:8px;align-items:center}
+.barcode-row-top input{
+  flex:1;min-width:0;padding:13px 14px;font-family:'IBM Plex Mono',monospace;font-size:.95rem;
+  background:var(--panel);border:1.5px solid var(--line);border-radius:5px;color:#fff;
+}
+.barcode-row-top input:focus{outline:none;border-color:var(--gold)}
+.barcode-row-top input.locked{border-color:var(--good)}
+.row-remove{
+  width:34px;height:44px;flex-shrink:0;background:transparent;border:1.5px solid var(--line);border-radius:5px;
+  color:var(--concrete);font-size:1.1rem;line-height:1;cursor:pointer;
+}
+.row-remove:active{border-color:var(--bred);color:var(--bred)}
+.row-hint{font-size:.72rem;color:var(--concrete);min-height:1.1em;margin-top:4px;padding-left:2px}
+.row-hint.warn{color:var(--warn)}
+#add-barcode-btn{
+  display:block;width:100%;text-align:center;background:none;border:1.5px dashed var(--line);
+  color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.06em;
+  text-transform:uppercase;padding:11px 0;border-radius:5px;cursor:pointer;margin-bottom:4px;
+}
+#add-barcode-btn:disabled{opacity:.35}
+#add-barcode-btn:active{border-color:var(--gold)}
+
 .photo-btn{
   width:100%;padding:20px;background:var(--panel);border:2px dashed var(--line);border-radius:8px;
   color:var(--paper);font-family:inherit;font-size:1rem;cursor:pointer;margin-bottom:12px;
@@ -88,8 +111,9 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 <main>
   <div class="note">Pair your Bluetooth scanner in your phone's Bluetooth settings first,
   the same way you'd pair a keyboard. Once paired, tap the barcode field below and scan —
-  it types straight in. If your phone asks permission to download multiple files, allow it —
-  that's how photos save.</div>
+  it types straight in. If this style comes in more than one size, scan the first size here,
+  then add each other size's barcode below — one set of photos covers all of them. If your
+  phone asks permission to download multiple files, allow it — that's how photos save.</div>
 
   <div class="step-label">1 · Scan the barcode</div>
   <div class="barcode-wrap">
@@ -97,6 +121,10 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   </div>
   <div class="barcode-hint" id="barcode-hint">Waiting for scan...</div>
   <button id="manual-toggle" type="button">Scanner not working? Type it manually</button>
+
+  <div class="step-label" style="margin-top:18px">Same style, other sizes? <span class="mono" style="text-transform:none;letter-spacing:0;color:var(--concrete);font-size:.72rem">(optional — same photos, different barcode)</span></div>
+  <div id="extra-barcodes"></div>
+  <button type="button" id="add-barcode-btn" disabled>+ Add another size's barcode</button>
 
   <div class="step-label" style="margin-top:22px">2 · Add 2–3 photos</div>
   <button class="photo-btn" id="camera-btn" disabled>
@@ -137,6 +165,8 @@ let session = store.get(STORE_KEY) || { items: [], counters: {} };
 const barcodeInput = document.getElementById('barcode-input');
 const barcodeHint = document.getElementById('barcode-hint');
 const manualToggle = document.getElementById('manual-toggle');
+const extraBarcodesContainer = document.getElementById('extra-barcodes');
+const addBarcodeBtn = document.getElementById('add-barcode-btn');
 const cameraBtn = document.getElementById('camera-btn');
 const libraryBtn = document.getElementById('library-btn');
 const cameraInput = document.getElementById('camera-input');
@@ -152,6 +182,100 @@ const newSessionBtn = document.getElementById('new-session-btn');
 function sanitize(name) {
   return name.trim().replace(/[<>:"/\\|?*\s]/g, '-');
 }
+
+// ---- Optional additional barcodes — same photo set can cover several sizes ----
+function createBarcodeRow(focus) {
+  const row = document.createElement('div');
+  row.className = 'barcode-row';
+  row.innerHTML =
+    '<div class="barcode-row-top">' +
+      '<input type="text" class="row-barcode mono" placeholder="Scan or type another size\'s barcode" inputmode="text" autocomplete="off">' +
+      '<button type="button" class="row-remove" aria-label="Remove">×</button>' +
+    '</div>' +
+    '<div class="row-hint mono"></div>';
+  extraBarcodesContainer.appendChild(row);
+  if (focus) row.querySelector('.row-barcode').focus();
+  return row;
+}
+
+function validateExtraRow(row) {
+  const input = row.querySelector('.row-barcode');
+  const hint = row.querySelector('.row-hint');
+  const val = sanitize(input.value);
+  input.classList.remove('locked');
+  hint.classList.remove('warn');
+  hint.textContent = '';
+  if (!val) return;
+
+  const dupPrimary = val === lockedBarcode;
+  const dupHere = [...extraBarcodesContainer.querySelectorAll('.barcode-row')]
+    .filter(r => r !== row)
+    .some(r => sanitize(r.querySelector('.row-barcode').value) === val);
+  const already = session.counters[val] || 0;
+
+  if (dupPrimary || dupHere) {
+    hint.textContent = '⚠ Already in this photo set.';
+    hint.classList.add('warn');
+  } else if (already > 0) {
+    hint.textContent = `⚠ Seen before this session (${already} photo${already > 1 ? 's' : ''}).`;
+    hint.classList.add('warn');
+  } else {
+    input.classList.add('locked');
+  }
+}
+
+function getExtraBarcodes() {
+  return [...extraBarcodesContainer.querySelectorAll('.row-barcode')]
+    .map(input => sanitize(input.value))
+    .filter(v => v !== '' && v !== lockedBarcode);
+}
+
+function resetExtraBarcodes() {
+  extraBarcodesContainer.innerHTML = '';
+}
+
+extraBarcodesContainer.addEventListener('input', (e) => {
+  if (!e.target.classList.contains('row-barcode')) return;
+  const row = e.target.closest('.barcode-row');
+  validateExtraRow(row);
+
+  // Same no-terminator safety net as the primary field — auto-advance to a
+  // fresh row once the scan pauses, so rapid sequential scans keep flowing.
+  clearTimeout(e.target._scanTimer);
+  const val = e.target.value.trim();
+  if (val.length >= 6) {
+    e.target._scanTimer = setTimeout(() => {
+      if (e.target.value.trim() === val) {
+        const allRows = [...extraBarcodesContainer.querySelectorAll('.barcode-row')];
+        if (allRows.indexOf(row) === allRows.length - 1) {
+          createBarcodeRow(true);
+        }
+      }
+    }, 300);
+  }
+});
+
+extraBarcodesContainer.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== 'Tab') return;
+  if (!e.target.classList.contains('row-barcode')) return;
+  e.preventDefault();
+  clearTimeout(e.target._scanTimer);
+  const row = e.target.closest('.barcode-row');
+  validateExtraRow(row);
+  const allRows = [...extraBarcodesContainer.querySelectorAll('.barcode-row')];
+  if (allRows.indexOf(row) === allRows.length - 1 && e.target.value.trim() !== '') {
+    createBarcodeRow(true);
+  }
+});
+
+extraBarcodesContainer.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('row-remove')) return;
+  e.target.closest('.barcode-row').remove();
+});
+
+addBarcodeBtn.addEventListener('click', () => {
+  createBarcodeRow(true);
+});
 
 manualToggle.addEventListener('click', () => {
   barcodeInput.setAttribute('inputmode', 'text');
@@ -178,6 +302,7 @@ barcodeInput.addEventListener('keydown', (e) => {
     }
     cameraBtn.disabled = false;
     libraryBtn.disabled = false;
+    addBarcodeBtn.disabled = false;
     updateSaveState();
   }
 });
@@ -189,6 +314,8 @@ barcodeInput.addEventListener('input', () => {
     barcodeHint.textContent = 'Waiting for scan...';
     cameraBtn.disabled = true;
     libraryBtn.disabled = true;
+    addBarcodeBtn.disabled = true;
+    resetExtraBarcodes();
     updateSaveState();
   }
 });
@@ -238,33 +365,43 @@ saveBtn.addEventListener('click', async () => {
   if (!lockedBarcode || attachedFiles.length === 0) return;
   saveBtn.disabled = true;
 
-  const startNum = session.counters[lockedBarcode] || 0;
+  const allBarcodes = [...new Set([lockedBarcode, ...getExtraBarcodes()])];
+  const totalSteps = allBarcodes.length * attachedFiles.length;
+  let step = 0;
 
-  // Staggered downloads — firing them all at once is unreliable on phones
-  for (let i = 0; i < attachedFiles.length; i++) {
-    saveBtn.textContent = `Saving ${i + 1}/${attachedFiles.length}...`;
-    const file = attachedFiles[i];
-    const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
-    const filename = `${lockedBarcode}_${startNum + i + 1}.${ext}`;
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    if (i < attachedFiles.length - 1) await delay(400);
+  // Staggered downloads — firing them all at once is unreliable on phones.
+  // Same photo bytes are downloaded once per barcode so the sorter/pipeline
+  // still finds a full photo set under every size's own barcode.
+  for (const bc of allBarcodes) {
+    const startNum = session.counters[bc] || 0;
+    for (let i = 0; i < attachedFiles.length; i++) {
+      step++;
+      saveBtn.textContent = `Saving ${step}/${totalSteps}...`;
+      const file = attachedFiles[i];
+      const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
+      const filename = `${bc}_${startNum + i + 1}.${ext}`;
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      if (step < totalSteps) await delay(400);
+    }
+    session.counters[bc] = startNum + attachedFiles.length;
   }
 
-  // Continue numbering for this barcode across the whole session
-  session.counters[lockedBarcode] = startNum + attachedFiles.length;
-  session.items.push({ barcode: lockedBarcode, count: attachedFiles.length });
+  session.items.push({ barcodes: allBarcodes, count: attachedFiles.length });
   store.set(STORE_KEY, session);
   refreshLog();
 
-  saveFlash.textContent = `✓ ${lockedBarcode} — ${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} saved to Downloads`;
+  const bcSummary = allBarcodes.length > 1
+    ? `${allBarcodes.length} sizes (${allBarcodes.join(', ')})`
+    : allBarcodes[0];
+  saveFlash.textContent = `✓ ${bcSummary} — ${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each, saved to Downloads`;
   saveFlash.classList.add('show');
   setTimeout(() => saveFlash.classList.remove('show'), 2500);
 
@@ -277,6 +414,8 @@ saveBtn.addEventListener('click', async () => {
   barcodeHint.textContent = 'Waiting for scan...';
   cameraBtn.disabled = true;
   libraryBtn.disabled = true;
+  addBarcodeBtn.disabled = true;
+  resetExtraBarcodes();
   saveBtn.textContent = 'Save & next item';
   updateSaveState();
   barcodeInput.focus();
@@ -299,9 +438,13 @@ function refreshLog() {
   session.items.slice().reverse().forEach(item => {
     const row = document.createElement('div');
     row.className = 'log-row';
-    const code = document.createElement('span'); code.textContent = item.barcode;
+    const barcodes = item.barcodes || (item.barcode ? [item.barcode] : []);
+    const code = document.createElement('span');
+    code.textContent = barcodes.length > 1 ? `${barcodes[0]} +${barcodes.length - 1} more` : (barcodes[0] || '');
     const count = document.createElement('span'); count.className = 'count';
-    count.textContent = `${item.count} photo${item.count > 1 ? 's' : ''}`;
+    count.textContent = barcodes.length > 1
+      ? `${item.count} photo${item.count > 1 ? 's' : ''} × ${barcodes.length}`
+      : `${item.count} photo${item.count > 1 ? 's' : ''}`;
     row.append(code, count);
     logRows.appendChild(row);
   });
