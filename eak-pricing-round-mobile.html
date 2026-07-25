@@ -297,11 +297,10 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
     <div id="generated-preview">
       <svg id="barcode-svg"></svg>
       <div id="generated-sku-text"></div>
-      <button id="print-btn">Reprint label</button>
-      <div class="print-note">Printed automatically when you tapped Generate — use this
-      button only if you need another copy. If your label printer doesn't appear as a print option,
-      it likely only works through its own app — the code above is correct either way,
-      you can print it from there instead.</div>
+      <button id="print-btn">Print via browser (optional)</button>
+      <div class="print-note">Not needed if you're printing through your label printer's own
+      app — copy the code above and enter it there instead. This button only matters if your
+      printer ever shows up as a normal browser print option.</div>
     </div>
 
     <button class="btn-secondary" id="use-generated-btn" style="display:none;margin-top:12px">
@@ -744,17 +743,17 @@ sizeRowsContainer.addEventListener('input', (e) => {
     const sizeVal = row.querySelector('.row-size').value.trim();
     const styleVal = row.querySelector('.row-gen-style').value.trim();
     const colorVal = row.querySelector('.row-gen-color').value.trim();
-    const sku = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
+    const raw = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
     const hint = row.querySelector('.row-sku-length-hint');
-    const len = sku.length || 0;
-    if (len === 0) {
+    if (!raw) {
       hint.textContent = '';
       hint.classList.remove('warn');
-    } else if (len > MAX_SKU_LENGTH) {
-      hint.textContent = `⚠ ${len}/${MAX_SKU_LENGTH} characters — too long to scan reliably.`;
+    } else if (raw.length > MAX_SKU_LENGTH) {
+      const shortened = autoAbbreviateSKU(fBrand.value, styleVal, colorVal, sizeVal);
+      hint.textContent = `Will auto-shorten to: ${shortened} (${shortened.length}/${MAX_SKU_LENGTH})`;
       hint.classList.add('warn');
     } else {
-      hint.textContent = `${len}/${MAX_SKU_LENGTH} characters — safe to scan.`;
+      hint.textContent = `${raw.length}/${MAX_SKU_LENGTH} characters — safe to scan.`;
       hint.classList.remove('warn');
     }
     return;
@@ -926,23 +925,49 @@ function buildSKU(brand, style, color, size) {
 // margin (~9 mil/bar) — past this, real testing showed labels too dense to read.
 const MAX_SKU_LENGTH = 16;
 
+// Auto-shortens Brand/Style/Color (never Size — that's what keeps different sizes
+// of the same item from colliding) one character at a time, always trimming
+// whichever of the three is currently longest, until the SKU fits the safe length.
+function autoAbbreviateSKU(brand, style, color, size) {
+  let b = sanitizePart(brand);
+  let st = sanitizePart(style);
+  let c = sanitizePart(color);
+  const sz = sanitizePart(size);
+
+  const buildNow = () => ['EAK', b, st, c, sz].filter(Boolean).join('-');
+
+  let guard = 0;
+  while (buildNow().length > MAX_SKU_LENGTH && guard < 100) {
+    guard++;
+    const parts = [
+      { val: b, set: v => { b = v; } },
+      { val: st, set: v => { st = v; } },
+      { val: c, set: v => { c = v; } },
+    ].filter(p => p.val.length > 1);
+    if (parts.length === 0) break; // nothing left that can shrink further
+    parts.sort((x, y) => y.val.length - x.val.length);
+    parts[0].set(parts[0].val.slice(0, -1));
+  }
+  return buildNow();
+}
+
 let currentGeneratedSKU = null;
 
 const skuLengthHint = document.getElementById('sku-length-hint');
 
 function updateSkuLengthHint() {
-  const sku = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
-  const len = sku.length || 0;
-  if (len === 0) {
+  const raw = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
+  if (!raw) {
     skuLengthHint.textContent = '';
     skuLengthHint.classList.remove('warn');
     return;
   }
-  if (len > MAX_SKU_LENGTH) {
-    skuLengthHint.textContent = `⚠ ${len}/${MAX_SKU_LENGTH} characters — too long to scan reliably. Shorten Brand/Style/Color.`;
+  if (raw.length > MAX_SKU_LENGTH) {
+    const shortened = autoAbbreviateSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
+    skuLengthHint.textContent = `Will auto-shorten to fit: ${shortened} (${shortened.length}/${MAX_SKU_LENGTH})`;
     skuLengthHint.classList.add('warn');
   } else {
-    skuLengthHint.textContent = `${len}/${MAX_SKU_LENGTH} characters — safe to scan.`;
+    skuLengthHint.textContent = `${raw.length}/${MAX_SKU_LENGTH} characters — safe to scan.`;
     skuLengthHint.classList.remove('warn');
   }
 }
@@ -953,11 +978,7 @@ generateBtn.addEventListener('click', () => {
     alert('Brand and Size are required to generate a barcode.');
     return;
   }
-  const sku = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
-  if (sku.length > MAX_SKU_LENGTH) {
-    alert(`That's ${sku.length} characters — ${sku.length - MAX_SKU_LENGTH} too many to print as a reliably scannable barcode on this label. Shorten Brand, Style, and/or Color and try again.`);
-    return;
-  }
+  const sku = autoAbbreviateSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
   currentGeneratedSKU = sku;
   generatedSize = gSize.value.trim();
   generatedBrand = gBrand.value.trim();
@@ -978,8 +999,6 @@ generateBtn.addEventListener('click', () => {
   } catch (err) {
     console.warn('Barcode image failed to render (SKU is still valid):', err);
   }
-
-  printLabel(sku);
 });
 
 function printLabel(sku) {
@@ -1042,12 +1061,7 @@ sizeRowsContainer.addEventListener('click', (e) => {
     }
     const styleVal = row.querySelector('.row-gen-style').value.trim();
     const colorVal = row.querySelector('.row-gen-color').value.trim();
-    const sku = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
-
-    if (sku.length > MAX_SKU_LENGTH) {
-      alert(`That's ${sku.length} characters — ${sku.length - MAX_SKU_LENGTH} too many to print as a reliably scannable barcode on this label. Shorten Style and/or Color and try again.`);
-      return;
-    }
+    const sku = autoAbbreviateSKU(fBrand.value, styleVal, colorVal, sizeVal);
 
     itemGenStyle = styleVal;
     itemGenColor = colorVal;
@@ -1059,8 +1073,6 @@ sizeRowsContainer.addEventListener('click', (e) => {
 
     row.querySelector('.row-generated-sku').textContent = `Generated: ${sku}`;
     row.querySelector('.row-generate-panel').classList.remove('show');
-
-    printLabel(sku);
     return;
   }
 
