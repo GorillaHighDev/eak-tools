@@ -19,6 +19,10 @@ body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotes
 .mono{font-family:'IBM Plex Mono',monospace}
 
 header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
+header{position:relative}
+#home-link{position:absolute;left:5vw;top:18px;color:var(--concrete);
+  font-family:'IBM Plex Mono',monospace;font-size:.72rem;text-decoration:none;letter-spacing:.02em}
+#home-link:active{color:var(--gold)}
 header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
 header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
 
@@ -214,6 +218,7 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 <body>
 
 <header>
+  <a id="home-link" href="./index.html">← All Tools</a>
   <h1 class="display">Exclusive Pricing Round</h1>
   <span class="mono">Scan → price it → next</span>
 </header>
