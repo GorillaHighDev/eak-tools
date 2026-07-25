@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>EAK Price Check</title>
+<script src="./msal-browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -19,6 +20,21 @@ body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotes
 header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
 header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
 header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+#onedrive-bar{
+  max-width:480px;margin:0 auto;padding:10px 5vw;display:flex;align-items:center;
+  justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);
+  background:var(--panel);flex-wrap:wrap;
+}
+#onedrive-status{font-size:.68rem;color:var(--concrete);letter-spacing:.02em}
+#onedrive-status.connected{color:var(--good)}
+#onedrive-status.warn{color:var(--warn)}
+#onedrive-bar button{
+  background:none;border:1px solid var(--gold);color:var(--gold);border-radius:5px;
+  padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+}
+#onedrive-disconnect-btn{border-color:var(--line);color:var(--concrete)}
 
 main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 
@@ -84,14 +100,20 @@ input:checked + .slider:before{transform:translateX(20px)}
   <span class="mono">Scan → hear the price</span>
 </header>
 
+<div id="onedrive-bar">
+  <span id="onedrive-status" class="mono">☁ Checking OneDrive…</span>
+  <button id="onedrive-connect-btn" type="button" style="display:none">Connect OneDrive</button>
+  <button id="onedrive-disconnect-btn" type="button" style="display:none">Disconnect</button>
+</div>
+
 <main>
-  <div class="note">Import the CSV(s) you exported from the Pricing Round tool below —
-  this is your price book. Re-import anytime you export a new or updated CSV; newer
-  imports overwrite matching barcodes. It's saved on this phone, so you only need to
-  do this after each pricing session, not every time you open the tool.</div>
+  <div class="note">Once connected to OneDrive, tap "Pull latest" to grab every pricing session's
+  CSV automatically — no more manual export/import. Newer sessions overwrite matching barcodes.
+  It's saved on this phone, so you only need to pull after each new pricing session.</div>
 
   <div class="bookbar">
     <span class="stat"><b id="book-count">0</b> items in price book</span>
+    <button id="pull-btn" style="display:none">Pull latest from OneDrive</button>
     <button id="import-btn">Import CSV</button>
   </div>
   <input type="file" id="import-input" accept=".csv" multiple>
@@ -133,6 +155,108 @@ const BOOK_KEY = 'eak-price-book';
 
 let priceBook = store.get(BOOK_KEY) || {};
 let scanLog = [];
+
+// ---- OneDrive sync (Microsoft Graph API) — same setup as the other tools ----
+const GRAPH_SCOPES = ['Files.ReadWrite', 'offline_access', 'User.Read'];
+const msalConfig = {
+  auth: {
+    clientId: '12101a8e-26f6-4965-85fe-3d762062e8ca',
+    authority: 'https://login.microsoftonline.com/common',
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: 'localStorage' },
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+const odStatus = document.getElementById('onedrive-status');
+const odConnectBtn = document.getElementById('onedrive-connect-btn');
+const odDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
+const pullBtn = document.getElementById('pull-btn');
+
+function updateOneDriveUI() {
+  const account = msalInstance.getActiveAccount();
+  if (account) {
+    odStatus.textContent = `☁ Connected — ${account.username}`;
+    odStatus.classList.add('connected');
+    odStatus.classList.remove('warn');
+    odConnectBtn.style.display = 'none';
+    odDisconnectBtn.style.display = 'inline-block';
+    pullBtn.style.display = 'inline-block';
+  } else {
+    odStatus.textContent = '☁ Not connected — import CSV manually below';
+    odStatus.classList.remove('connected', 'warn');
+    odConnectBtn.style.display = 'inline-block';
+    odDisconnectBtn.style.display = 'none';
+    pullBtn.style.display = 'none';
+  }
+}
+
+odConnectBtn.addEventListener('click', () => {
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+});
+odDisconnectBtn.addEventListener('click', () => {
+  msalInstance.setActiveAccount(null);
+  updateOneDriveUI();
+});
+
+async function getGraphToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) return null;
+  try {
+    const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return result.accessToken;
+  } catch (err) {
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES });
+    return null;
+  }
+}
+
+function encodeGraphPath(path) {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
+async function listOneDriveFiles(folderPath) {
+  const token = await getGraphToken();
+  if (!token) return null;
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(folderPath)}:/children`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.value || [];
+  } catch (err) {
+    console.warn('OneDrive list failed:', folderPath, err);
+    return null;
+  }
+}
+
+async function downloadOneDriveFile(relativePath) {
+  const token = await getGraphToken();
+  if (!token) return null;
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch (err) {
+    console.warn('OneDrive download failed:', relativePath, err);
+    return null;
+  }
+}
+
+(async () => {
+  try {
+    await msalInstance.initialize();
+    await msalInstance.handleRedirectPromise();
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0 && !msalInstance.getActiveAccount()) {
+      msalInstance.setActiveAccount(accounts[0]);
+    }
+  } catch (err) {
+    console.warn('OneDrive sign-in check failed:', err);
+  }
+  updateOneDriveUI();
+})();
 
 const bookCountEl = document.getElementById('book-count');
 const importBtn = document.getElementById('import-btn');
@@ -182,38 +306,82 @@ function parseCSV(text) {
   return rows.filter(r => r.length > 1 || r[0] !== '');
 }
 
+// Returns rows merged, or null if this text doesn't look like a Pricing Round CSV
+function mergeCSVIntoPriceBook(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return 0;
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const idx = {
+    barcode: header.indexOf('barcode'), size: header.indexOf('size'),
+    price: header.indexOf('price'), brand: header.indexOf('brand'),
+  };
+  if (idx.barcode === -1 || idx.price === -1) return null;
+  let count = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const barcode = (r[idx.barcode] || '').trim();
+    if (!barcode) continue;
+    priceBook[barcode] = {
+      price: (r[idx.price] || '').trim(),
+      size: idx.size > -1 ? (r[idx.size] || '').trim() : '',
+      brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
+    };
+    count++;
+  }
+  return count;
+}
+
 importBtn.addEventListener('click', () => importInput.click());
 importInput.addEventListener('change', async () => {
   let totalNew = 0;
   for (const file of importInput.files) {
     const text = await file.text();
-    const rows = parseCSV(text);
-    if (rows.length < 2) continue;
-    const header = rows[0].map(h => h.trim().toLowerCase());
-    const idx = {
-      barcode: header.indexOf('barcode'), size: header.indexOf('size'),
-      price: header.indexOf('price'), brand: header.indexOf('brand'),
-    };
-    if (idx.barcode === -1 || idx.price === -1) {
+    const result = mergeCSVIntoPriceBook(text);
+    if (result === null) {
       alert(`"${file.name}" doesn't look like a Pricing Round export — skipped.`);
       continue;
     }
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      const barcode = (r[idx.barcode] || '').trim();
-      if (!barcode) continue;
-      priceBook[barcode] = {
-        price: (r[idx.price] || '').trim(),
-        size: idx.size > -1 ? (r[idx.size] || '').trim() : '',
-        brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
-      };
-      totalNew++;
-    }
+    totalNew += result;
   }
   store.set(BOOK_KEY, priceBook);
   updateBookCount();
   alert(`Imported ${totalNew} row(s). Price book now has ${Object.keys(priceBook).length} item(s).`);
   importInput.value = '';
+});
+
+pullBtn.addEventListener('click', async () => {
+  if (!msalInstance.getActiveAccount()) return;
+  pullBtn.disabled = true;
+  pullBtn.textContent = 'Listing sessions...';
+
+  const files = await listOneDriveFiles('pricing-csv');
+  if (!files) {
+    alert('Could not reach OneDrive — check your connection and try again.');
+    pullBtn.disabled = false;
+    pullBtn.textContent = 'Pull latest from OneDrive';
+    return;
+  }
+
+  // Oldest first, so the most recent session's prices win on any overlapping barcode.
+  const csvFiles = files
+    .filter(f => f.name.toLowerCase().endsWith('.csv'))
+    .sort((a, b) => new Date(a.lastModifiedDateTime) - new Date(b.lastModifiedDateTime));
+
+  let totalNew = 0;
+  for (let i = 0; i < csvFiles.length; i++) {
+    const f = csvFiles[i];
+    pullBtn.textContent = `Pulling ${i + 1}/${csvFiles.length}...`;
+    const text = await downloadOneDriveFile(`pricing-csv/${f.name}`);
+    if (!text) continue;
+    const result = mergeCSVIntoPriceBook(text);
+    if (result) totalNew += result;
+  }
+
+  store.set(BOOK_KEY, priceBook);
+  updateBookCount();
+  pullBtn.disabled = false;
+  pullBtn.textContent = 'Pull latest from OneDrive';
+  alert(`Pulled ${csvFiles.length} session file(s) — ${totalNew} row(s) merged. Price book now has ${Object.keys(priceBook).length} item(s).`);
 });
 
 function formatSpokenPrice(priceStr) {
