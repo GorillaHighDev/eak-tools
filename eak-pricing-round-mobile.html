@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>EAK Pricing Round</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script src="./jsbarcode.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -186,11 +186,12 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 #print-label{display:none}
 @media print {
   @page { size: 2in 1in; margin: 0.06in; }
+  html, body { background:#fff !important; }
   body > *:not(#print-label-wrap) { display:none !important; }
-  #print-label-wrap { display:block !important; }
-  #print-label { display:block !important; text-align:center; }
+  #print-label-wrap { display:block !important; background:#fff !important; }
+  #print-label { display:block !important; text-align:center; background:#fff !important; }
   #print-label svg { width:100%; height:auto; }
-  #print-label .sku-text { font-family:'IBM Plex Mono',monospace; font-size:8px; margin-top:2px; }
+  #print-label .sku-text { font-family:'IBM Plex Mono',monospace; font-size:8px; margin-top:2px; color:#000 !important; }
 }
 </style>
 </head>
