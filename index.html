@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>EAK Tools</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D0D0F; --panel:#17171B; --paper:#F2F0EB; --concrete:#8C897F;
+  --gold:#D9A22E; --bred:#C3251C; --line:rgba(242,240,235,.12);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotesk',sans-serif;
+  -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;min-height:100vh}
+.display{font-family:'Anton',sans-serif;text-transform:uppercase}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+header{padding:32px 5vw 20px;text-align:center;border-bottom:1px solid var(--line)}
+header h1{font-size:1.6rem;color:#fff;margin:0 0 6px;letter-spacing:.02em}
+header .mono{font-size:.68rem;letter-spacing:.14em;color:var(--gold);text-transform:uppercase}
+
+main{flex:1;max-width:520px;margin:0 auto;width:100%;padding:32px 6vw 10vh;
+  display:flex;flex-direction:column;gap:16px}
+
+a.tool{
+  display:block;text-decoration:none;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:22px 20px;position:relative;transition:border-color .15s;
+}
+a.tool:active{border-color:var(--gold)}
+a.tool .step{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;
+  color:var(--gold);text-transform:uppercase;margin-bottom:6px}
+a.tool .name{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:1.3rem;color:#fff;
+  letter-spacing:.01em;margin-bottom:4px}
+a.tool .desc{font-size:.82rem;color:var(--concrete);line-height:1.4}
+a.tool .arrow{position:absolute;right:20px;top:50%;transform:translateY(-50%);color:var(--gold);
+  font-size:1.4rem}
+
+footer{text-align:center;padding:0 6vw 24px;font-size:.72rem;color:var(--concrete)}
+footer .mono{font-family:'IBM Plex Mono',monospace}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>EAK Tools</h1>
+  <div class="mono">Exclusive Apparel &amp; Kicks · Catalog Intake</div>
+</header>
+
+<main>
+  <a class="tool" href="./eak-pricing-round-mobile.html">
+    <div class="step">Phase 1</div>
+    <div class="name">Pricing Round</div>
+    <div class="desc">Scan each item, set size/price/qty/brand. Export CSV when the round is done.</div>
+    <div class="arrow">→</div>
+  </a>
+
+  <a class="tool" href="./eak-intake-capture-mobile.html">
+    <div class="step">Phase 2</div>
+    <div class="name">Intake Capture</div>
+    <div class="desc">Scan the same item, snap front/back/tag photos for the catalog.</div>
+    <div class="arrow">→</div>
+  </a>
+
+  <a class="tool" href="./eak-price-check-mobile.html">
+    <div class="step">Floor Tool</div>
+    <div class="name">Price Check</div>
+    <div class="desc">Scan any priced item, hear the price read aloud instantly.</div>
+    <div class="arrow">→</div>
+  </a>
+</main>
+
+<footer>
+  <div class="mono">Add this page to your Home Screen for one-tap access</div>
+</footer>
+
+</body>
+</html>
