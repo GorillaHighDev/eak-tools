@@ -272,8 +272,9 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
     <div id="generated-preview">
       <svg id="barcode-svg"></svg>
       <div id="generated-sku-text"></div>
-      <button id="print-btn">Print label</button>
-      <div class="print-note">If your label printer doesn't appear as a print option,
+      <button id="print-btn">Reprint label</button>
+      <div class="print-note">Printed automatically when you tapped Generate — use this
+      button only if you need another copy. If your label printer doesn't appear as a print option,
       it likely only works through its own app — the code above is correct either way,
       you can print it from there instead.</div>
     </div>
@@ -742,6 +743,8 @@ generateBtn.addEventListener('click', () => {
   } catch (err) {
     console.warn('Barcode image failed to render (SKU is still valid):', err);
   }
+
+  printLabel(sku);
 });
 
 function printLabel(sku) {
