@@ -84,6 +84,25 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   color:var(--concrete);font-size:1.1rem;line-height:1;cursor:pointer;
 }
 .row-remove:active{border-color:var(--bred);color:var(--bred)}
+
+.row-generate-toggle{
+  display:block;width:100%;text-align:center;background:none;border:none;color:var(--gold);
+  font-family:'IBM Plex Mono',monospace;font-size:.72rem;text-decoration:underline;cursor:pointer;
+  padding:8px 0 0;margin-top:6px;
+}
+.row-generate-panel{display:none;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line)}
+.row-generate-panel.show{display:block}
+.row-generate-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.row-generate-fields input{
+  padding:11px 12px;font-size:.9rem;background:var(--ink);border:1.5px solid var(--line);
+  border-radius:5px;color:#fff;width:100%;
+}
+.row-generate-fields input:focus{outline:none;border-color:var(--gold)}
+.row-generate-btn{
+  width:100%;padding:12px;background:var(--gold);color:var(--ink);border:none;border-radius:5px;
+  font-weight:700;font-size:.8rem;cursor:pointer;font-family:inherit;
+}
+.row-generated-sku{margin-top:8px;text-align:center;font-size:.78rem;color:var(--good)}
 #add-size-btn{
   display:block;width:100%;text-align:center;background:none;border:1.5px dashed var(--line);
   color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.06em;
@@ -309,6 +328,8 @@ let photoCounters = store.get(PHOTO_COUNTER_KEY) || {}; // { barcode: highestNum
 let attachedFiles = [];
 let generatedSize = '';
 let generatedBrand = '';
+let itemGenStyle = ''; // remembered Style/Color across generated barcodes for the SAME item,
+let itemGenColor = ''; // so generating size 2/3/4's barcode doesn't need retyping them
 
 const barcodeInput = document.getElementById('barcode-input');
 const barcodeHint = document.getElementById('barcode-hint');
@@ -365,6 +386,15 @@ function createSizeRow() {
     '<div class="row-bottom">' +
       '<input type="text" class="row-size" placeholder="Size" inputmode="text" enterkeyhint="next">' +
       '<input type="text" class="row-qty" placeholder="Qty" inputmode="numeric" value="1" enterkeyhint="next">' +
+    '</div>' +
+    '<button type="button" class="row-generate-toggle">No barcode for this size? Generate one →</button>' +
+    '<div class="row-generate-panel">' +
+      '<div class="row-generate-fields">' +
+        '<input type="text" class="row-gen-style mono" placeholder="Style / SKU">' +
+        '<input type="text" class="row-gen-color mono" placeholder="Color">' +
+      '</div>' +
+      '<button type="button" class="row-generate-btn">Generate &amp; print label for this size</button>' +
+      '<div class="row-generated-sku mono"></div>' +
     '</div>';
   sizeRowsContainer.appendChild(row);
   updateRemoveButtonVisibility();
@@ -479,15 +509,6 @@ sizeRowsContainer.addEventListener('keydown', (e) => {
   }
 });
 
-sizeRowsContainer.addEventListener('click', (e) => {
-  if (!e.target.classList.contains('row-remove')) return;
-  const rows = sizeRowsContainer.querySelectorAll('.size-row');
-  if (rows.length <= 1) return;
-  e.target.closest('.size-row').remove();
-  updateRemoveButtonVisibility();
-  updateSaveState();
-});
-
 addSizeBtn.addEventListener('click', () => {
   createSizeRow().querySelector('.row-barcode').focus();
 });
@@ -584,6 +605,8 @@ generateBtn.addEventListener('click', () => {
   currentGeneratedSKU = sku;
   generatedSize = gSize.value.trim();
   generatedBrand = gBrand.value.trim();
+  itemGenStyle = gStyle.value.trim();
+  itemGenColor = gColor.value.trim();
 
   JsBarcode("#barcode-svg", sku, {
     format: "CODE128", width: 2, height: 60, displayValue: false, margin: 8,
@@ -593,13 +616,17 @@ generateBtn.addEventListener('click', () => {
   useGeneratedBtn.style.display = 'block';
 });
 
-printBtn.addEventListener('click', () => {
-  if (!currentGeneratedSKU) return;
-  JsBarcode("#print-barcode-svg", currentGeneratedSKU, {
+function printLabel(sku) {
+  JsBarcode("#print-barcode-svg", sku, {
     format: "CODE128", width: 1.5, height: 40, displayValue: false, margin: 4,
   });
-  document.getElementById('print-sku-text').textContent = currentGeneratedSKU;
+  document.getElementById('print-sku-text').textContent = sku;
   window.print();
+}
+
+printBtn.addEventListener('click', () => {
+  if (!currentGeneratedSKU) return;
+  printLabel(currentGeneratedSKU);
 });
 
 useGeneratedBtn.addEventListener('click', () => {
@@ -610,6 +637,63 @@ useGeneratedBtn.addEventListener('click', () => {
   if (firstSizeInput) firstSizeInput.value = generatedSize;
   fBrand.value = generatedBrand;
   fPrice.focus();
+  updateSaveState();
+});
+
+// ---- Generate a barcode for an ADDITIONAL size, right inside its own row ----
+// Reuses the shared Brand field plus whatever Style/Color were last used for
+// this item, so only Size needs entering fresh for each new size.
+sizeRowsContainer.addEventListener('click', (e) => {
+  if (e.target.classList.contains('row-generate-toggle')) {
+    const row = e.target.closest('.size-row');
+    const panel = row.querySelector('.row-generate-panel');
+    const willShow = !panel.classList.contains('show');
+    panel.classList.toggle('show', willShow);
+    if (willShow) {
+      const styleInput = row.querySelector('.row-gen-style');
+      const colorInput = row.querySelector('.row-gen-color');
+      if (!styleInput.value.trim()) styleInput.value = itemGenStyle;
+      if (!colorInput.value.trim()) colorInput.value = itemGenColor;
+    }
+    return;
+  }
+
+  if (e.target.classList.contains('row-generate-btn')) {
+    const row = e.target.closest('.size-row');
+    const sizeVal = row.querySelector('.row-size').value.trim();
+    if (!fBrand.value.trim()) {
+      alert('Enter the Brand above first — it\u2019s shared across every size.');
+      return;
+    }
+    if (!sizeVal) {
+      alert('Enter this row\u2019s Size first, then generate its barcode.');
+      row.querySelector('.row-size').focus();
+      return;
+    }
+    const styleVal = row.querySelector('.row-gen-style').value.trim();
+    const colorVal = row.querySelector('.row-gen-color').value.trim();
+    const sku = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
+
+    itemGenStyle = styleVal;
+    itemGenColor = colorVal;
+
+    const barcodeField = row.querySelector('.row-barcode');
+    barcodeField.value = sku;
+    validateRowBarcode(row);
+    updateSaveState();
+
+    row.querySelector('.row-generated-sku').textContent = `Generated: ${sku}`;
+    row.querySelector('.row-generate-panel').classList.remove('show');
+
+    printLabel(sku);
+    return;
+  }
+
+  if (!e.target.classList.contains('row-remove')) return;
+  const rows = sizeRowsContainer.querySelectorAll('.size-row');
+  if (rows.length <= 1) return;
+  e.target.closest('.size-row').remove();
+  updateRemoveButtonVisibility();
   updateSaveState();
 });
 
@@ -637,6 +721,10 @@ function lockBarcode(val) {
   }
 
   fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
+  if (val !== currentGeneratedSKU) {
+    itemGenStyle = '';
+    itemGenColor = '';
+  }
   resetSizeRows(val);
   resetPhotos();
   fPrice.focus();
