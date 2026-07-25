@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>EAK Pricing Round</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D0D0F; --panel:#17171B; --paper:#F2F0EB; --concrete:#8C897F;
+  --gold:#D9A22E; --bred:#C3251C; --line:rgba(242,240,235,.12); --good:#3FB56F; --warn:#E8A13B;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotesk',sans-serif;
+  -webkit-font-smoothing:antialiased}
+.display{font-family:'Anton',sans-serif;text-transform:uppercase}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
+header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
+header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
+
+.note{background:var(--panel);border-left:3px solid var(--gold);padding:12px 14px;border-radius:3px;
+  font-size:.8rem;color:var(--concrete);margin-bottom:24px;line-height:1.5}
+
+.step-label{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+
+.barcode-wrap{margin-bottom:10px}
+#barcode-input{
+  width:100%;padding:20px 16px;font-family:'IBM Plex Mono',monospace;font-size:1.4rem;
+  letter-spacing:.03em;background:var(--panel);border:2px solid var(--line);border-radius:6px;
+  color:#fff;transition:border-color .15s,box-shadow .15s;text-align:center;
+}
+#barcode-input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 4px rgba(217,162,46,.15)}
+#barcode-input.locked{border-color:var(--good);background:rgba(63,181,111,.08)}
+.barcode-hint{margin-top:8px;font-size:.8rem;color:var(--concrete);text-align:center;min-height:1.2em}
+.barcode-hint.warn{color:var(--warn)}
+#manual-toggle{display:block;margin:6px auto 0;background:none;border:none;color:var(--concrete);
+  font-family:inherit;font-size:.75rem;text-decoration:underline;cursor:pointer}
+
+#no-barcode-toggle{
+  display:block;width:100%;text-align:center;background:none;border:none;color:var(--gold);
+  font-family:inherit;font-size:.82rem;padding:12px 0 20px;cursor:pointer;text-decoration:underline;
+}
+
+#generate-panel{display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:18px;margin-bottom:20px}
+#generate-panel.show{display:block}
+#generate-panel .step-label{margin-bottom:14px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{margin-bottom:14px}
+.field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--concrete);margin-bottom:6px}
+.field label .req{color:var(--bred)}
+.field input{
+  width:100%;padding:13px 14px;font-family:'Space Grotesk',sans-serif;font-size:1rem;
+  background:var(--ink);border:1.5px solid var(--line);border-radius:5px;color:#fff;
+}
+.field input:focus{outline:none;border-color:var(--gold)}
+
+.btn-secondary{
+  width:100%;padding:15px;background:transparent;border:1.5px solid var(--gold);color:var(--gold);
+  border-radius:5px;font-weight:700;font-size:.85rem;letter-spacing:.05em;text-transform:uppercase;
+  cursor:pointer;font-family:inherit;
+}
+.btn-secondary:disabled{opacity:.3;border-color:var(--concrete);color:var(--concrete)}
+
+#generated-preview{display:none;margin-top:16px;text-align:center;background:#fff;border-radius:6px;
+  padding:14px}
+#generated-preview.show{display:block}
+#generated-preview svg{max-width:100%}
+#generated-sku-text{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:#000;
+  margin-top:4px;word-break:break-all}
+#print-btn{width:100%;margin-top:12px;padding:14px;background:var(--gold);color:var(--ink);
+  border:none;border-radius:5px;font-weight:700;font-size:.85rem;letter-spacing:.05em;
+  text-transform:uppercase;cursor:pointer;font-family:inherit}
+.print-note{font-size:.72rem;color:var(--concrete);margin-top:10px;line-height:1.5;text-align:left}
+
+#entry-form{display:none}
+#entry-form.show{display:block}
+.field.price input{font-family:'IBM Plex Mono',monospace}
+
+#save-btn{
+  width:100%;padding:20px;background:var(--gold);color:var(--ink);border:none;border-radius:6px;
+  font-weight:700;font-size:1rem;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
+  font-family:inherit;margin-top:6px;
+}
+#save-btn:disabled{opacity:.3}
+#save-flash{text-align:center;margin-top:12px;font-family:'IBM Plex Mono',monospace;
+  font-size:.85rem;color:var(--good);opacity:0;transition:opacity .3s}
+#save-flash.show{opacity:1}
+
+#export-row{margin-top:6vh;padding-top:20px;border-top:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;gap:12px}
+#export-btn{
+  background:transparent;border:1.5px solid var(--gold);color:var(--gold);border-radius:5px;
+  padding:12px 18px;font-family:inherit;font-weight:700;font-size:.8rem;letter-spacing:.05em;
+  text-transform:uppercase;cursor:pointer;white-space:nowrap;
+}
+#export-btn:disabled{opacity:.3;border-color:var(--concrete);color:var(--concrete)}
+#export-hint{font-size:.72rem;color:var(--concrete);line-height:1.4}
+#new-session-btn{display:none;margin:14px auto 0;background:none;border:none;color:var(--concrete);
+  font-family:inherit;font-size:.78rem;text-decoration:underline;cursor:pointer}
+
+#log{margin-top:24px}
+#log h2{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--concrete);margin-bottom:12px;text-align:center}
+.log-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--line);
+  font-family:'IBM Plex Mono',monospace;font-size:.78rem}
+.log-row .code{color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-row .size{color:var(--concrete)}
+.log-row .price{color:var(--gold)}
+.log-row .del{background:none;border:none;color:var(--concrete);font-size:1rem;cursor:pointer;
+  padding:2px 6px;line-height:1}
+.log-row .del:active{color:var(--bred)}
+#session-count{color:var(--gold)}
+
+#print-label{display:none}
+@media print {
+  @page { size: 2in 1in; margin: 0.06in; }
+  body > *:not(#print-label-wrap) { display:none !important; }
+  #print-label-wrap { display:block !important; }
+  #print-label { display:block !important; text-align:center; }
+  #print-label svg { width:100%; height:auto; }
+  #print-label .sku-text { font-family:'IBM Plex Mono',monospace; font-size:8px; margin-top:2px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 class="display">Exclusive Pricing Round</h1>
+  <span class="mono">Scan → price it → next</span>
+</header>
+
+<main>
+  <div class="note">Pair your Bluetooth scanner AND your Bluetooth label printer in your
+  phone's Bluetooth settings first, same as pairing a keyboard. Tap the barcode field and
+  scan — it types straight in. Entries auto-save on this phone as you go; export the CSV
+  whenever you pause.</div>
+
+  <div class="step-label">1 · Scan the barcode</div>
+  <div class="barcode-wrap">
+    <input type="text" id="barcode-input" class="mono" placeholder="Tap here, then scan" autocomplete="off" inputmode="none">
+  </div>
+  <div class="barcode-hint" id="barcode-hint">Waiting for scan...</div>
+  <button id="lock-btn" type="button" style="display:none;margin:8px auto 0;width:100%;padding:12px;background:var(--gold);color:#141416;border:none;border-radius:8px;font-weight:700;">Lock it in →</button>
+  <button id="manual-toggle" type="button">Scanner not working? Type it manually</button>
+
+  <button id="no-barcode-toggle">No barcode on this item? Generate one →</button>
+
+  <div id="generate-panel">
+    <div class="step-label">Build a new EAK barcode</div>
+    <div class="two-col">
+      <div class="field">
+        <label>Brand <span class="req">*</span></label>
+        <input type="text" id="g-brand">
+      </div>
+      <div class="field">
+        <label>Style / SKU</label>
+        <input type="text" id="g-style">
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Color</label>
+        <input type="text" id="g-color">
+      </div>
+      <div class="field">
+        <label>Size <span class="req">*</span></label>
+        <input type="text" id="g-size">
+      </div>
+    </div>
+    <button class="btn-secondary" id="generate-btn">Generate barcode</button>
+
+    <div id="generated-preview">
+      <svg id="barcode-svg"></svg>
+      <div id="generated-sku-text"></div>
+      <button id="print-btn">Print label</button>
+      <div class="print-note">If your label printer doesn't appear as a print option,
+      it likely only works through its own app — the code above is correct either way,
+      you can print it from there instead.</div>
+    </div>
+
+    <button class="btn-secondary" id="use-generated-btn" style="display:none;margin-top:12px">
+      Use this barcode → continue to pricing
+    </button>
+  </div>
+
+  <div id="entry-form">
+    <div class="step-label">2 · Enter the details</div>
+
+    <div class="two-col">
+      <div class="field">
+        <label>Size <span class="req">*</span></label>
+        <input type="text" id="f-size" inputmode="text" enterkeyhint="next">
+      </div>
+      <div class="field price">
+        <label>Price <span class="req">*</span></label>
+        <input type="text" id="f-price" inputmode="decimal" placeholder="0.00" enterkeyhint="next">
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="field">
+        <label>Qty <span class="req">*</span></label>
+        <input type="text" id="f-qty" inputmode="numeric" value="1" enterkeyhint="next">
+      </div>
+      <div class="field">
+        <label>Brand</label>
+        <input type="text" id="f-brand" inputmode="text" enterkeyhint="next">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Notes</label>
+      <input type="text" id="f-notes" inputmode="text" enterkeyhint="done">
+    </div>
+
+    <button id="save-btn" disabled>Save &amp; next item</button>
+    <div id="save-flash" class="mono"></div>
+  </div>
+
+  <div id="export-row" style="display:none">
+    <button id="export-btn" disabled>Export CSV</button>
+    <span id="export-hint">Entries auto-save on this phone, but the CSV is what feeds
+    the system —<br>export whenever you pause.</span>
+  </div>
+  <button id="new-session-btn">Start a new session (clears this list)</button>
+
+  <div id="log" style="display:none">
+    <h2><span id="session-count">0</span> items priced this session</h2>
+    <div id="log-rows"></div>
+  </div>
+</main>
+
+<div id="print-label-wrap">
+  <div id="print-label">
+    <svg id="print-barcode-svg"></svg>
+    <div class="sku-text" id="print-sku-text"></div>
+  </div>
+</div>
+
+<script>
+// ---- Safe storage wrapper: persists on the phone; degrades gracefully if unavailable ----
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} },
+};
+const STORE_KEY = 'eak-pricing-session';
+
+let lockedBarcode = null;
+let sessionItems = store.get(STORE_KEY) || [];
+let generatedSize = '';
+let generatedBrand = '';
+
+const barcodeInput = document.getElementById('barcode-input');
+const barcodeHint = document.getElementById('barcode-hint');
+const lockBtn = document.getElementById('lock-btn');
+const manualToggle = document.getElementById('manual-toggle');
+const entryForm = document.getElementById('entry-form');
+const saveBtn = document.getElementById('save-btn');
+const saveFlash = document.getElementById('save-flash');
+const exportRow = document.getElementById('export-row');
+const exportBtn = document.getElementById('export-btn');
+const newSessionBtn = document.getElementById('new-session-btn');
+const logEl = document.getElementById('log');
+const logRows = document.getElementById('log-rows');
+const sessionCountEl = document.getElementById('session-count');
+
+const fSize = document.getElementById('f-size');
+const fPrice = document.getElementById('f-price');
+const fQty = document.getElementById('f-qty');
+const fBrand = document.getElementById('f-brand');
+const fNotes = document.getElementById('f-notes');
+const fieldChain = [fSize, fPrice, fQty, fBrand, fNotes];
+
+// ---- UPC/EAN check-digit validation (soft warning only) ----
+function checkDigitStatus(code) {
+  if (!/^\d{12}$/.test(code) && !/^\d{13}$/.test(code)) return null; // not applicable
+  const digits = code.split('').map(Number);
+  let sum = 0;
+  const isUPC = digits.length === 12;
+  for (let i = 0; i < digits.length; i++) {
+    // UPC-A: odd positions (1st,3rd,...) x3. EAN-13: even positions x3.
+    const weight3 = isUPC ? (i % 2 === 0) : (i % 2 === 1);
+    sum += digits[i] * (weight3 ? 3 : 1);
+  }
+  return sum % 10 === 0;
+}
+
+// ---- Generate-a-barcode panel ----
+const noBarcodeToggle = document.getElementById('no-barcode-toggle');
+const generatePanel = document.getElementById('generate-panel');
+const gBrand = document.getElementById('g-brand');
+const gStyle = document.getElementById('g-style');
+const gColor = document.getElementById('g-color');
+const gSize = document.getElementById('g-size');
+const generateBtn = document.getElementById('generate-btn');
+const generatedPreview = document.getElementById('generated-preview');
+const generatedSkuText = document.getElementById('generated-sku-text');
+const printBtn = document.getElementById('print-btn');
+const useGeneratedBtn = document.getElementById('use-generated-btn');
+
+noBarcodeToggle.addEventListener('click', () => {
+  generatePanel.classList.toggle('show');
+});
+
+manualToggle.addEventListener('click', () => {
+  barcodeInput.setAttribute('inputmode', 'text');
+  barcodeInput.focus();
+  manualToggle.style.display = 'none';
+});
+
+function sanitizePart(s) {
+  return (s || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '');
+}
+function buildSKU(brand, style, color, size) {
+  return ['EAK', sanitizePart(brand), sanitizePart(style), sanitizePart(color), sanitizePart(size)]
+    .filter(Boolean).join('-');
+}
+
+let currentGeneratedSKU = null;
+
+generateBtn.addEventListener('click', () => {
+  if (!gBrand.value.trim() || !gSize.value.trim()) {
+    alert('Brand and Size are required to generate a barcode.');
+    return;
+  }
+  const sku = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
+  currentGeneratedSKU = sku;
+  generatedSize = gSize.value.trim();
+  generatedBrand = gBrand.value.trim();
+
+  JsBarcode("#barcode-svg", sku, {
+    format: "CODE128", width: 2, height: 60, displayValue: false, margin: 8,
+  });
+  generatedSkuText.textContent = sku;
+  generatedPreview.classList.add('show');
+  useGeneratedBtn.style.display = 'block';
+});
+
+printBtn.addEventListener('click', () => {
+  if (!currentGeneratedSKU) return;
+  JsBarcode("#print-barcode-svg", currentGeneratedSKU, {
+    format: "CODE128", width: 1.5, height: 40, displayValue: false, margin: 4,
+  });
+  document.getElementById('print-sku-text').textContent = currentGeneratedSKU;
+  window.print();
+});
+
+useGeneratedBtn.addEventListener('click', () => {
+  if (!currentGeneratedSKU) return;
+  lockBarcode(currentGeneratedSKU);
+  generatePanel.classList.remove('show');
+  fSize.value = generatedSize;
+  fBrand.value = generatedBrand;
+  fPrice.focus();
+  updateSaveState();
+});
+
+// ---- Scan path ----
+function lockBarcode(val) {
+  lockedBarcode = val;
+  barcodeInput.classList.add('locked');
+  barcodeInput.value = val;
+  barcodeInput.blur();
+  lockBtn.style.display = 'none';
+  entryForm.classList.add('show');
+
+  // Soft warnings — never block, always inform
+  const dup = sessionItems.some(item => item.barcode === val);
+  const check = checkDigitStatus(val);
+  barcodeHint.classList.remove('warn');
+  if (dup) {
+    barcodeHint.textContent = '⚠ Already logged this session — continue only if intentional.';
+    barcodeHint.classList.add('warn');
+  } else if (check === false) {
+    barcodeHint.textContent = '⚠ Check digit doesn\u2019t validate — worth a re-scan to be safe.';
+    barcodeHint.classList.add('warn');
+  } else {
+    barcodeHint.textContent = 'Locked in — fill in the details below.';
+  }
+
+  if (val !== currentGeneratedSKU) {
+    fSize.value = ''; fPrice.value = ''; fQty.value = '1'; fBrand.value = ''; fNotes.value = '';
+    fSize.focus();
+  } else {
+    fPrice.value = ''; fQty.value = '1'; fNotes.value = '';
+  }
+  updateSaveState();
+}
+
+barcodeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const val = barcodeInput.value.trim();
+    if (!val) return;
+    lockBarcode(val);
+  }
+});
+
+// Some scanners are configured with no Enter/Tab terminator — they just dump
+// characters into the field and stop. Auto-lock after a short pause in typing
+// so a scan never dead-ends waiting for a keystroke that isn't coming.
+let scanPauseTimer = null;
+barcodeInput.addEventListener('input', () => {
+  if (lockedBarcode) {
+    lockedBarcode = null;
+    barcodeInput.classList.remove('locked');
+    barcodeHint.classList.remove('warn');
+    barcodeHint.textContent = 'Waiting for scan...';
+    entryForm.classList.remove('show');
+    updateSaveState();
+  }
+
+  const val = barcodeInput.value.trim();
+  lockBtn.style.display = val ? 'block' : 'none';
+
+  clearTimeout(scanPauseTimer);
+  if (val.length >= 6) {
+    scanPauseTimer = setTimeout(() => {
+      // Only auto-lock if the value hasn't changed since the timer was set
+      // and it hasn't already been locked (avoids double-firing).
+      if (barcodeInput.value.trim() === val && !lockedBarcode) {
+        lockBarcode(val);
+      }
+    }, 300);
+  }
+});
+
+lockBtn.addEventListener('click', () => {
+  clearTimeout(scanPauseTimer);
+  const val = barcodeInput.value.trim();
+  if (!val) return;
+  lockBarcode(val);
+});
+
+// ---- Field chaining ----
+fieldChain.forEach((field, i) => {
+  field.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (i < fieldChain.length - 1) {
+      fieldChain[i + 1].focus();
+    } else if (!saveBtn.disabled) {
+      saveBtn.click();
+    }
+  });
+  field.addEventListener('input', updateSaveState);
+});
+
+function updateSaveState() {
+  const priceOk = fPrice.value.trim() !== '' && !isNaN(parseFloat(fPrice.value));
+  const qtyOk = fQty.value.trim() !== '' && !isNaN(parseInt(fQty.value));
+  const sizeOk = fSize.value.trim() !== '';
+  saveBtn.disabled = !(lockedBarcode && sizeOk && priceOk && qtyOk);
+}
+
+function csvEscape(val) {
+  const s = String(val ?? '');
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function persist() {
+  store.set(STORE_KEY, sessionItems);
+}
+
+saveBtn.addEventListener('click', () => {
+  if (saveBtn.disabled) return;
+
+  const item = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    barcode: lockedBarcode,
+    size: fSize.value.trim(),
+    price: parseFloat(fPrice.value).toFixed(2),
+    qty: parseInt(fQty.value) || 0,
+    brand: fBrand.value.trim(),
+    notes: fNotes.value.trim(),
+  };
+  sessionItems.push(item);
+  persist();
+  refreshUI();
+
+  saveFlash.textContent = `✓ ${item.barcode} — $${item.price}, size ${item.size}`;
+  saveFlash.classList.add('show');
+  setTimeout(() => saveFlash.classList.remove('show'), 2500);
+
+  lockedBarcode = null;
+  currentGeneratedSKU = null;
+  barcodeInput.value = '';
+  barcodeInput.classList.remove('locked');
+  barcodeHint.classList.remove('warn');
+  barcodeHint.textContent = 'Waiting for scan...';
+  lockBtn.style.display = 'none';
+  entryForm.classList.remove('show');
+  generatedPreview.classList.remove('show');
+  useGeneratedBtn.style.display = 'none';
+  gBrand.value = ''; gStyle.value = ''; gColor.value = ''; gSize.value = '';
+  updateSaveState();
+  barcodeInput.focus();
+});
+
+exportBtn.addEventListener('click', () => {
+  if (sessionItems.length === 0) return;
+  const headers = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes'];
+  const lines = [headers.join(',')];
+  sessionItems.forEach(item => {
+    lines.push([
+      csvEscape(item.barcode), csvEscape(item.size), csvEscape(item.price),
+      csvEscape(item.qty), csvEscape(item.brand), csvEscape(item.notes),
+    ].join(','));
+  });
+  const csv = lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 16);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `eak-pricing-round-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+});
+
+newSessionBtn.addEventListener('click', () => {
+  if (!confirm('Clear all ' + sessionItems.length + ' entries and start fresh?\n\nMake sure you exported the CSV first — this cannot be undone.')) return;
+  sessionItems = [];
+  store.del(STORE_KEY);
+  refreshUI();
+  barcodeInput.focus();
+});
+
+function deleteItem(id) {
+  const item = sessionItems.find(i => i.id === id);
+  if (!item) return;
+  if (!confirm(`Delete ${item.barcode} (size ${item.size}, $${item.price})?`)) return;
+  sessionItems = sessionItems.filter(i => i.id !== id);
+  persist();
+  refreshUI();
+}
+
+function refreshUI() {
+  const has = sessionItems.length > 0;
+  logEl.style.display = has ? 'block' : 'none';
+  exportRow.style.display = has ? 'flex' : 'none';
+  exportBtn.disabled = !has;
+  newSessionBtn.style.display = has ? 'block' : 'none';
+  sessionCountEl.textContent = sessionItems.length;
+  logRows.innerHTML = '';
+  sessionItems.slice().reverse().forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    const code = document.createElement('span'); code.className = 'code'; code.textContent = item.barcode;
+    const size = document.createElement('span'); size.className = 'size'; size.textContent = item.size;
+    const price = document.createElement('span'); price.className = 'price'; price.textContent = '$' + item.price;
+    const del = document.createElement('button'); del.className = 'del'; del.textContent = '×';
+    del.addEventListener('click', () => deleteItem(item.id));
+    row.append(code, size, price, del);
+    logRows.appendChild(row);
+  });
+}
+
+// Restore any previous session on load
+refreshUI();
+barcodeInput.focus();
+</script>
+</body>
+</html>

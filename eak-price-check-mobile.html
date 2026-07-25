@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>EAK Price Check</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D0D0F; --panel:#17171B; --paper:#F2F0EB; --concrete:#8C897F;
+  --gold:#D9A22E; --bred:#C3251C; --line:rgba(242,240,235,.12); --good:#3FB56F; --warn:#E8A13B;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotesk',sans-serif;
+  -webkit-font-smoothing:antialiased}
+.display{font-family:'Anton',sans-serif;text-transform:uppercase}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
+header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
+header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
+
+.note{background:var(--panel);border-left:3px solid var(--gold);padding:12px 14px;border-radius:3px;
+  font-size:.8rem;color:var(--concrete);margin-bottom:20px;line-height:1.5}
+
+.bookbar{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;margin-bottom:22px}
+.bookbar .stat{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--concrete)}
+.bookbar .stat b{color:var(--gold)}
+.bookbar button{background:none;border:1px solid var(--concrete);color:var(--paper);border-radius:4px;
+  padding:8px 12px;font-family:inherit;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;
+  cursor:pointer;white-space:nowrap}
+#import-input{display:none}
+
+.step-label{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+
+.barcode-wrap{margin-bottom:10px}
+#barcode-input{
+  width:100%;padding:22px 16px;font-family:'IBM Plex Mono',monospace;font-size:1.5rem;
+  letter-spacing:.03em;background:var(--panel);border:2px solid var(--line);border-radius:6px;
+  color:#fff;transition:border-color .15s,box-shadow .15s;text-align:center;
+}
+#barcode-input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 4px rgba(217,162,46,.15)}
+.barcode-hint{margin-top:8px;font-size:.8rem;color:var(--concrete);text-align:center;min-height:1.2em}
+#manual-toggle{display:block;margin:6px auto 22px;background:none;border:none;color:var(--concrete);
+  font-family:inherit;font-size:.75rem;text-decoration:underline;cursor:pointer}
+
+.audio-toggle{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:26px}
+.audio-toggle label{font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--concrete)}
+.switch{position:relative;width:44px;height:24px}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--line);border-radius:24px;cursor:pointer;transition:.2s}
+.slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;
+  background:#fff;border-radius:50%;transition:.2s}
+input:checked + .slider{background:var(--gold)}
+input:checked + .slider:before{transform:translateX(20px)}
+
+#result{display:none;text-align:center;padding:30px 20px;border-radius:10px;margin-bottom:20px}
+#result.found{background:rgba(63,181,111,.1);border:1.5px solid var(--good)}
+#result.notfound{background:rgba(195,37,28,.1);border:1.5px solid var(--bred)}
+#result-price{font-family:'Anton',sans-serif;font-size:3rem;color:#fff;line-height:1}
+#result-meta{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--concrete)}
+#result-status{font-family:'Anton',sans-serif;font-size:1.5rem;color:var(--bred)}
+#result-sub{margin-top:8px;font-size:.85rem;color:var(--concrete)}
+
+#log{margin-top:5vh;border-top:1px solid var(--line);padding-top:20px}
+#log h2{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--concrete);margin-bottom:12px;text-align:center}
+.log-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
+.log-row .code{color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-row .price{color:var(--gold)}
+.log-row .miss{color:var(--bred)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 class="display">Exclusive Price Check</h1>
+  <span class="mono">Scan → hear the price</span>
+</header>
+
+<main>
+  <div class="note">Import the CSV(s) you exported from the Pricing Round tool below —
+  this is your price book. Re-import anytime you export a new or updated CSV; newer
+  imports overwrite matching barcodes. It's saved on this phone, so you only need to
+  do this after each pricing session, not every time you open the tool.</div>
+
+  <div class="bookbar">
+    <span class="stat"><b id="book-count">0</b> items in price book</span>
+    <button id="import-btn">Import CSV</button>
+  </div>
+  <input type="file" id="import-input" accept=".csv" multiple>
+
+  <div class="step-label">Scan a barcode</div>
+  <div class="barcode-wrap">
+    <input type="text" id="barcode-input" class="mono" placeholder="Tap here, then scan" autocomplete="off" inputmode="none">
+  </div>
+  <div class="barcode-hint" id="barcode-hint">Waiting for scan...</div>
+  <button id="manual-toggle" type="button">Scanner not working? Type it manually</button>
+
+  <div class="audio-toggle">
+    <label for="audio-switch">Read price aloud</label>
+    <div class="switch">
+      <input type="checkbox" id="audio-switch" checked>
+      <span class="slider"></span>
+    </div>
+  </div>
+
+  <div id="result">
+    <div id="result-price"></div>
+    <div id="result-meta"></div>
+    <div id="result-status"></div>
+    <div id="result-sub"></div>
+  </div>
+
+  <div id="log" style="display:none">
+    <h2>Recent scans this session</h2>
+    <div id="log-rows"></div>
+  </div>
+</main>
+
+<script>
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+};
+const BOOK_KEY = 'eak-price-book';
+
+let priceBook = store.get(BOOK_KEY) || {};
+let scanLog = [];
+
+const bookCountEl = document.getElementById('book-count');
+const importBtn = document.getElementById('import-btn');
+const importInput = document.getElementById('import-input');
+const barcodeInput = document.getElementById('barcode-input');
+const barcodeHint = document.getElementById('barcode-hint');
+const manualToggle = document.getElementById('manual-toggle');
+const audioSwitch = document.getElementById('audio-switch');
+const resultEl = document.getElementById('result');
+const resultPrice = document.getElementById('result-price');
+const resultMeta = document.getElementById('result-meta');
+const resultStatus = document.getElementById('result-status');
+const resultSub = document.getElementById('result-sub');
+const logEl = document.getElementById('log');
+const logRows = document.getElementById('log-rows');
+
+function updateBookCount() {
+  bookCountEl.textContent = Object.keys(priceBook).length;
+}
+updateBookCount();
+
+manualToggle.addEventListener('click', () => {
+  barcodeInput.setAttribute('inputmode', 'text');
+  barcodeInput.focus();
+  manualToggle.style.display = 'none';
+});
+
+// ---- Proper CSV parser: handles quoted fields with embedded commas/quotes ----
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else { field += c; }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else { field += c; }
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== '');
+}
+
+importBtn.addEventListener('click', () => importInput.click());
+importInput.addEventListener('change', async () => {
+  let totalNew = 0;
+  for (const file of importInput.files) {
+    const text = await file.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) continue;
+    const header = rows[0].map(h => h.trim().toLowerCase());
+    const idx = {
+      barcode: header.indexOf('barcode'), size: header.indexOf('size'),
+      price: header.indexOf('price'), brand: header.indexOf('brand'),
+    };
+    if (idx.barcode === -1 || idx.price === -1) {
+      alert(`"${file.name}" doesn't look like a Pricing Round export — skipped.`);
+      continue;
+    }
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const barcode = (r[idx.barcode] || '').trim();
+      if (!barcode) continue;
+      priceBook[barcode] = {
+        price: (r[idx.price] || '').trim(),
+        size: idx.size > -1 ? (r[idx.size] || '').trim() : '',
+        brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
+      };
+      totalNew++;
+    }
+  }
+  store.set(BOOK_KEY, priceBook);
+  updateBookCount();
+  alert(`Imported ${totalNew} row(s). Price book now has ${Object.keys(priceBook).length} item(s).`);
+  importInput.value = '';
+});
+
+function formatSpokenPrice(priceStr) {
+  const num = parseFloat(priceStr);
+  if (isNaN(num)) return 'price unknown';
+  const dollars = Math.floor(num);
+  const cents = Math.round((num - dollars) * 100);
+  let s = dollars + (dollars === 1 ? ' dollar' : ' dollars');
+  if (cents > 0) s += ' and ' + cents + (cents === 1 ? ' cent' : ' cents');
+  return s;
+}
+
+function speak(text) {
+  if (!audioSwitch.checked) return;
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate = 1.0;
+  window.speechSynthesis.speak(utter);
+}
+
+function lookup(code) {
+  const entry = priceBook[code];
+  resultEl.style.display = 'block';
+  if (entry) {
+    resultEl.className = 'found';
+    resultPrice.textContent = '$' + parseFloat(entry.price).toFixed(2);
+    resultMeta.textContent = [entry.size ? `Size ${entry.size}` : '', entry.brand].filter(Boolean).join(' · ');
+    resultStatus.textContent = '';
+    resultSub.textContent = '';
+    speak(`$${formatSpokenPrice(entry.price)}${entry.size ? ', size ' + entry.size : ''}`);
+    scanLog.unshift({ code, found: true, price: entry.price });
+  } else {
+    resultEl.className = 'notfound';
+    resultPrice.textContent = '';
+    resultMeta.textContent = '';
+    resultStatus.textContent = 'NOT IN SYSTEM';
+    resultSub.textContent = 'This item hasn\u2019t been priced yet — run it through the Pricing Round tool.';
+    speak('Not found in system');
+    scanLog.unshift({ code, found: false });
+  }
+  scanLog = scanLog.slice(0, 15);
+  renderLog();
+}
+
+barcodeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const val = barcodeInput.value.trim();
+    if (!val) return;
+    lookup(val);
+    barcodeInput.value = '';
+  }
+});
+
+function renderLog() {
+  logEl.style.display = scanLog.length ? 'block' : 'none';
+  logRows.innerHTML = '';
+  scanLog.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    const code = document.createElement('span'); code.className = 'code'; code.textContent = item.code;
+    const price = document.createElement('span');
+    if (item.found) { price.className = 'price'; price.textContent = '$' + parseFloat(item.price).toFixed(2); }
+    else { price.className = 'miss'; price.textContent = 'not found'; }
+    row.append(code, price);
+    logRows.appendChild(row);
+  });
+}
+
+barcodeInput.focus();
+</script>
+</body>
+</html>

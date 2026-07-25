@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>EAK Intake Capture</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D0D0F; --panel:#17171B; --paper:#F2F0EB; --concrete:#8C897F;
+  --gold:#D9A22E; --bred:#C3251C; --line:rgba(242,240,235,.12); --good:#3FB56F; --warn:#E8A13B;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotesk',sans-serif;
+  -webkit-font-smoothing:antialiased}
+.display{font-family:'Anton',sans-serif;text-transform:uppercase}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
+header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
+header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
+
+.step-label{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+
+.barcode-wrap{margin-bottom:10px}
+#barcode-input{
+  width:100%;padding:20px 16px;font-family:'IBM Plex Mono',monospace;font-size:1.5rem;
+  letter-spacing:.03em;background:var(--panel);border:2px solid var(--line);border-radius:6px;
+  color:#fff;transition:border-color .15s,box-shadow .15s;text-align:center;
+}
+#barcode-input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 4px rgba(217,162,46,.15)}
+#barcode-input.locked{border-color:var(--good);background:rgba(63,181,111,.08)}
+.barcode-hint{margin-top:8px;font-size:.8rem;color:var(--concrete);text-align:center;min-height:1.2em}
+.barcode-hint.warn{color:var(--warn)}
+#manual-toggle{display:block;margin:6px auto 0;background:none;border:none;color:var(--concrete);
+  font-family:inherit;font-size:.75rem;text-decoration:underline;cursor:pointer}
+
+.photo-btn{
+  width:100%;padding:20px;background:var(--panel);border:2px dashed var(--line);border-radius:8px;
+  color:var(--paper);font-family:inherit;font-size:1rem;cursor:pointer;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:center;gap:10px;transition:border-color .15s;
+}
+.photo-btn:active{border-color:var(--gold)}
+.photo-btn .plus{font-family:'Anton',sans-serif;font-size:1.5rem;color:var(--gold)}
+.photo-btn:disabled{opacity:.35}
+#camera-input,#library-input{display:none}
+
+#thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px}
+.thumb{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:4px;right:4px;background:rgba(13,13,15,.85);color:#fff;
+  border:none;border-radius:50%;width:26px;height:26px;font-size:.85rem}
+
+#save-btn{
+  width:100%;padding:20px;background:var(--gold);color:var(--ink);border:none;border-radius:6px;
+  font-weight:700;font-size:1rem;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
+  font-family:inherit;
+}
+#save-btn:disabled{opacity:.3}
+#save-flash{text-align:center;margin-top:12px;font-family:'IBM Plex Mono',monospace;
+  font-size:.85rem;color:var(--good);opacity:0;transition:opacity .3s}
+#save-flash.show{opacity:1}
+
+.note{background:var(--panel);border-left:3px solid var(--gold);padding:12px 14px;border-radius:3px;
+  font-size:.8rem;color:var(--concrete);margin-bottom:24px;line-height:1.5}
+
+#log{margin-top:6vh;border-top:1px solid var(--line);padding-top:20px}
+#log h2{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--concrete);margin-bottom:12px;text-align:center}
+.log-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);
+  font-family:'IBM Plex Mono',monospace;font-size:.8rem}
+.log-row .count{color:var(--gold)}
+#session-count{color:var(--gold)}
+#new-session-btn{display:none;margin:16px auto 0;background:none;border:none;color:var(--concrete);
+  font-family:inherit;font-size:.78rem;text-decoration:underline;cursor:pointer}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 class="display">Exclusive Intake Capture</h1>
+  <span class="mono">Scan → snap → save → next</span>
+</header>
+
+<main>
+  <div class="note">Pair your Bluetooth scanner in your phone's Bluetooth settings first,
+  the same way you'd pair a keyboard. Once paired, tap the barcode field below and scan —
+  it types straight in. If your phone asks permission to download multiple files, allow it —
+  that's how photos save.</div>
+
+  <div class="step-label">1 · Scan the barcode</div>
+  <div class="barcode-wrap">
+    <input type="text" id="barcode-input" class="mono" placeholder="Tap here, then scan" autocomplete="off" inputmode="none">
+  </div>
+  <div class="barcode-hint" id="barcode-hint">Waiting for scan...</div>
+  <button id="manual-toggle" type="button">Scanner not working? Type it manually</button>
+
+  <div class="step-label" style="margin-top:22px">2 · Add 2–3 photos</div>
+  <button class="photo-btn" id="camera-btn" disabled>
+    <span class="plus">+</span> Take a photo
+  </button>
+  <button class="photo-btn" id="library-btn" disabled>
+    <span class="plus">▤</span> Choose from library
+  </button>
+  <input type="file" id="camera-input" accept="image/*" capture="environment">
+  <input type="file" id="library-input" accept="image/*" multiple>
+  <div id="thumbs"></div>
+
+  <div class="step-label">3 · Save</div>
+  <button id="save-btn" disabled>Save &amp; next item</button>
+  <div id="save-flash" class="mono"></div>
+
+  <div id="log" style="display:none">
+    <h2><span id="session-count">0</span> items captured this session</h2>
+    <div id="log-rows"></div>
+  </div>
+  <button id="new-session-btn">Start a new session (resets numbering &amp; list)</button>
+</main>
+
+<script>
+// ---- Safe storage wrapper: persists on the phone; degrades gracefully if unavailable ----
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} },
+};
+const STORE_KEY = 'eak-intake-session';
+
+let attachedFiles = [];
+let lockedBarcode = null;
+// { items: [{barcode,count}], counters: {barcode: highestNumberUsed} }
+let session = store.get(STORE_KEY) || { items: [], counters: {} };
+
+const barcodeInput = document.getElementById('barcode-input');
+const barcodeHint = document.getElementById('barcode-hint');
+const manualToggle = document.getElementById('manual-toggle');
+const cameraBtn = document.getElementById('camera-btn');
+const libraryBtn = document.getElementById('library-btn');
+const cameraInput = document.getElementById('camera-input');
+const libraryInput = document.getElementById('library-input');
+const thumbsEl = document.getElementById('thumbs');
+const saveBtn = document.getElementById('save-btn');
+const saveFlash = document.getElementById('save-flash');
+const logEl = document.getElementById('log');
+const logRows = document.getElementById('log-rows');
+const sessionCountEl = document.getElementById('session-count');
+const newSessionBtn = document.getElementById('new-session-btn');
+
+function sanitize(name) {
+  return name.trim().replace(/[<>:"/\\|?*\s]/g, '-');
+}
+
+manualToggle.addEventListener('click', () => {
+  barcodeInput.setAttribute('inputmode', 'text');
+  barcodeInput.focus();
+  manualToggle.style.display = 'none';
+});
+
+barcodeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const val = sanitize(barcodeInput.value);
+    if (!val) return;
+    lockedBarcode = val;
+    barcodeInput.classList.add('locked');
+    barcodeInput.value = val;
+    barcodeInput.blur();
+    const already = session.counters[val] || 0;
+    barcodeHint.classList.remove('warn');
+    if (already > 0) {
+      barcodeHint.textContent = `Seen before this session (${already} photo${already > 1 ? 's' : ''}) — new ones continue the numbering.`;
+      barcodeHint.classList.add('warn');
+    } else {
+      barcodeHint.textContent = 'Locked in — add photos below.';
+    }
+    cameraBtn.disabled = false;
+    libraryBtn.disabled = false;
+    updateSaveState();
+  }
+});
+barcodeInput.addEventListener('input', () => {
+  if (lockedBarcode) {
+    lockedBarcode = null;
+    barcodeInput.classList.remove('locked');
+    barcodeHint.classList.remove('warn');
+    barcodeHint.textContent = 'Waiting for scan...';
+    cameraBtn.disabled = true;
+    libraryBtn.disabled = true;
+    updateSaveState();
+  }
+});
+
+cameraBtn.addEventListener('click', () => cameraInput.click());
+libraryBtn.addEventListener('click', () => libraryInput.click());
+
+cameraInput.addEventListener('change', () => {
+  if (cameraInput.files && cameraInput.files[0]) {
+    attachedFiles.push(cameraInput.files[0]);
+    renderThumbs();
+    updateSaveState();
+  }
+  cameraInput.value = '';
+});
+libraryInput.addEventListener('change', () => {
+  for (const f of libraryInput.files) {
+    if (f.type.startsWith('image/')) attachedFiles.push(f);
+  }
+  renderThumbs();
+  updateSaveState();
+  libraryInput.value = '';
+});
+
+function renderThumbs() {
+  thumbsEl.innerHTML = '';
+  attachedFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(f);
+    const btn = document.createElement('button');
+    btn.textContent = '×';
+    btn.onclick = () => { attachedFiles.splice(i, 1); renderThumbs(); updateSaveState(); };
+    div.appendChild(img); div.appendChild(btn);
+    thumbsEl.appendChild(div);
+  });
+}
+
+function updateSaveState() {
+  saveBtn.disabled = !(lockedBarcode && attachedFiles.length > 0);
+}
+
+const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+saveBtn.addEventListener('click', async () => {
+  if (!lockedBarcode || attachedFiles.length === 0) return;
+  saveBtn.disabled = true;
+
+  const startNum = session.counters[lockedBarcode] || 0;
+
+  // Staggered downloads — firing them all at once is unreliable on phones
+  for (let i = 0; i < attachedFiles.length; i++) {
+    saveBtn.textContent = `Saving ${i + 1}/${attachedFiles.length}...`;
+    const file = attachedFiles[i];
+    const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
+    const filename = `${lockedBarcode}_${startNum + i + 1}.${ext}`;
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    if (i < attachedFiles.length - 1) await delay(400);
+  }
+
+  // Continue numbering for this barcode across the whole session
+  session.counters[lockedBarcode] = startNum + attachedFiles.length;
+  session.items.push({ barcode: lockedBarcode, count: attachedFiles.length });
+  store.set(STORE_KEY, session);
+  refreshLog();
+
+  saveFlash.textContent = `✓ ${lockedBarcode} — ${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} saved to Downloads`;
+  saveFlash.classList.add('show');
+  setTimeout(() => saveFlash.classList.remove('show'), 2500);
+
+  attachedFiles = [];
+  lockedBarcode = null;
+  renderThumbs();
+  barcodeInput.value = '';
+  barcodeInput.classList.remove('locked');
+  barcodeHint.classList.remove('warn');
+  barcodeHint.textContent = 'Waiting for scan...';
+  cameraBtn.disabled = true;
+  libraryBtn.disabled = true;
+  saveBtn.textContent = 'Save & next item';
+  updateSaveState();
+  barcodeInput.focus();
+});
+
+newSessionBtn.addEventListener('click', () => {
+  if (!confirm('Start a new session? This clears the list and resets photo numbering.\n\nOnly do this after the current batch has been transferred and sorted on the laptop.')) return;
+  session = { items: [], counters: {} };
+  store.del(STORE_KEY);
+  refreshLog();
+  barcodeInput.focus();
+});
+
+function refreshLog() {
+  const has = session.items.length > 0;
+  logEl.style.display = has ? 'block' : 'none';
+  newSessionBtn.style.display = has ? 'block' : 'none';
+  sessionCountEl.textContent = session.items.length;
+  logRows.innerHTML = '';
+  session.items.slice().reverse().forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    const code = document.createElement('span'); code.textContent = item.barcode;
+    const count = document.createElement('span'); count.className = 'count';
+    count.textContent = `${item.count} photo${item.count > 1 ? 's' : ''}`;
+    row.append(code, count);
+    logRows.appendChild(row);
+  });
+}
+
+// Restore any previous session on load
+refreshLog();
+barcodeInput.focus();
+</script>
+</body>
+</html>
