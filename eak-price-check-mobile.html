@@ -84,6 +84,12 @@ input:checked + .slider:before{transform:translateX(20px)}
 #result.notfound{background:rgba(195,37,28,.1);border:1.5px solid var(--bred)}
 #result-price{font-family:'Anton',sans-serif;font-size:3rem;color:#fff;line-height:1}
 #result-meta{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--concrete)}
+#result-photos{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
+#result-photos img{
+  width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);
+  background:var(--panel);
+}
+#result-photos .photo-note{font-size:.7rem;color:var(--concrete);width:100%;margin-top:2px}
 #result-status{font-family:'Anton',sans-serif;font-size:1.5rem;color:var(--bred)}
 #result-sub{margin-top:8px;font-size:.85rem;color:var(--concrete)}
 
@@ -141,6 +147,7 @@ input:checked + .slider:before{transform:translateX(20px)}
   <div id="result">
     <div id="result-price"></div>
     <div id="result-meta"></div>
+    <div id="result-photos"></div>
     <div id="result-status"></div>
     <div id="result-sub"></div>
   </div>
@@ -249,6 +256,20 @@ async function downloadOneDriveFile(relativePath) {
   }
 }
 
+async function downloadOneDriveFileBlob(relativePath) {
+  const token = await getGraphToken();
+  if (!token) return null;
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    return await res.blob();
+  } catch (err) {
+    console.warn('OneDrive photo download failed:', relativePath, err);
+    return null;
+  }
+}
+
 (async () => {
   try {
     await msalInstance.initialize();
@@ -273,6 +294,7 @@ const audioSwitch = document.getElementById('audio-switch');
 const resultEl = document.getElementById('result');
 const resultPrice = document.getElementById('result-price');
 const resultMeta = document.getElementById('result-meta');
+const resultPhotos = document.getElementById('result-photos');
 const resultStatus = document.getElementById('result-status');
 const resultSub = document.getElementById('result-sub');
 const logEl = document.getElementById('log');
@@ -408,9 +430,42 @@ function speak(text) {
   window.speechSynthesis.speak(utter);
 }
 
+let currentPhotoUrls = [];
+
+function clearResultPhotos() {
+  currentPhotoUrls.forEach(url => URL.revokeObjectURL(url));
+  currentPhotoUrls = [];
+  resultPhotos.innerHTML = '';
+}
+
+// Runs in the background — never delays the instant price/audio feedback,
+// which is the whole point of this tool when checking items on the floor.
+async function loadResultPhotos(code) {
+  if (!msalInstance.getActiveAccount()) return;
+  const files = await listOneDriveFiles(`intake/${code}`);
+  if (!files || files.length === 0) return;
+
+  const imageFiles = files
+    .filter(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .slice(0, 3);
+
+  for (const f of imageFiles) {
+    const blob = await downloadOneDriveFileBlob(`intake/${code}/${f.name}`);
+    if (!blob) continue;
+    const url = URL.createObjectURL(blob);
+    currentPhotoUrls.push(url);
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = code;
+    resultPhotos.appendChild(img);
+  }
+}
+
 function lookup(code) {
   const entry = priceBook[code];
   resultEl.style.display = 'block';
+  clearResultPhotos();
   if (entry) {
     resultEl.className = 'found';
     resultPrice.textContent = '$' + parseFloat(entry.price).toFixed(2);
@@ -419,6 +474,7 @@ function lookup(code) {
     resultSub.textContent = '';
     speak(`$${formatSpokenPrice(entry.price)}${entry.size ? ', size ' + entry.size : ''}`);
     scanLog.unshift({ code, found: true, price: entry.price });
+    loadResultPhotos(code);
   } else {
     resultEl.className = 'notfound';
     resultPrice.textContent = '';
