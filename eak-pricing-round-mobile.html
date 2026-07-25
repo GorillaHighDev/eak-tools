@@ -593,6 +593,30 @@ function getKnownItem(barcode) {
   return knownItems[barcode] || null;
 }
 
+// Same style, different size — identified by sharing the same brand/price/notes,
+// since that's exactly what's shared across every size row within one Save.
+// Checks today's session first, then falls back to OneDrive history for each barcode.
+function findSiblingSizes(barcode, target) {
+  const siblings = new Map(); // barcode -> size
+  const matches = (brand, price, notes) =>
+    (brand || '') === (target.brand || '') &&
+    (price || '') === (target.price || '') &&
+    (notes || '') === (target.notes || '');
+
+  sessionItems.forEach(item => {
+    if (item.barcode === barcode) return;
+    if (matches(item.brand, item.price, item.notes)) siblings.set(item.barcode, item.size);
+  });
+
+  Object.keys(knownItems).forEach(bc => {
+    if (bc === barcode || siblings.has(bc)) return;
+    const k = knownItems[bc];
+    if (matches(k.brand, k.price, k.notes)) siblings.set(bc, k.size);
+  });
+
+  return [...siblings.entries()].map(([bc, size]) => ({ barcode: bc, size }));
+}
+
 (async () => {
   try {
     await msalInstance.initialize();
@@ -1116,6 +1140,7 @@ function lockBarcode(val) {
     itemGenColor = '';
   }
   resetSizeRows(val);
+  let siblingCount = 0;
   if (val !== currentGeneratedSKU && known && known.size) {
     const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
     if (firstSizeInput) firstSizeInput.value = known.size;
@@ -1124,6 +1149,18 @@ function lockBarcode(val) {
     fPrice.value = known.price;
     fBrand.value = known.brand;
     fNotes.value = known.notes || '';
+
+    const siblings = findSiblingSizes(val, known);
+    siblings.forEach(sib => {
+      const row = createSizeRow();
+      row.querySelector('.row-barcode').value = sib.barcode;
+      if (sib.size) row.querySelector('.row-size').value = sib.size;
+      validateRowBarcode(row);
+    });
+    siblingCount = siblings.length;
+  }
+  if (siblingCount > 0) {
+    barcodeHint.textContent += ` Found ${siblingCount} other size${siblingCount > 1 ? 's' : ''} of this item — added below.`;
   }
   resetPhotos();
   clearExistingPhotos();
