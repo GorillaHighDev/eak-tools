@@ -121,11 +121,22 @@ input:checked + .slider:before{transform:translateX(20px)}
 #log{margin-top:5vh;border-top:1px solid var(--line);padding-top:20px}
 #log h2{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;
   text-transform:uppercase;color:var(--concrete);margin-bottom:12px;text-align:center}
-.log-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:9px 0;
-  border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
+.log-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:9px 0;
+  align-items:center;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
 .log-row .code{color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .log-row .price{color:var(--gold)}
 .log-row .miss{color:var(--bred)}
+.log-row .row-check{width:18px;height:18px;accent-color:var(--gold)}
+#copy-photos-btn{
+  display:block;width:100%;margin-top:16px;padding:11px;background:none;
+  border:1.5px dashed var(--line);color:var(--gold);border-radius:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.04em;
+  text-transform:uppercase;cursor:pointer;
+}
+#copy-photos-btn:disabled{opacity:.4}
+#copy-photos-result{font-size:.82rem;margin-top:10px;text-align:center}
+#copy-photos-result .ok{color:var(--good)}
+#copy-photos-result .warn{color:var(--warn)}
 </style>
 </head>
 <body>
@@ -189,6 +200,8 @@ input:checked + .slider:before{transform:translateX(20px)}
   <div id="log" style="display:none">
     <h2>Recent scans this session</h2>
     <div id="log-rows"></div>
+    <button id="copy-photos-btn" style="display:none">Copy current photos to checked items</button>
+    <div id="copy-photos-result"></div>
   </div>
 </main>
 
@@ -546,6 +559,7 @@ function clearResultPhotos() {
   currentPhotoUrls = [];
   currentPhotos = [];
   resultPhotos.innerHTML = '';
+  updateCopyPhotosBtn();
 }
 
 function renderPhotoThumb(name, url) {
@@ -589,15 +603,29 @@ async function loadResultPhotos(code) {
     .filter(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
-  currentPhotos = imageFiles.map(f => ({ name: f.name }));
+  currentPhotos = [];
 
   for (const f of imageFiles) {
     const blob = await downloadOneDriveFileBlob(`intake/${code}/${f.name}`);
     if (!blob) continue;
+    currentPhotos.push({ name: f.name, blob });
     const url = URL.createObjectURL(blob);
     currentPhotoUrls.push(url);
     renderPhotoThumb(f.name, url);
   }
+  updateCopyPhotosBtn();
+}
+
+// Figures out the next free photoN number for a DIFFERENT barcode's intake
+// folder, so copies never overwrite whatever's already there.
+async function nextPhotoNumberFor(barcode) {
+  const files = await listOneDriveFiles(`intake/${barcode}`);
+  let max = 0;
+  (files || []).forEach(f => {
+    const m = f.name.match(/^photo(\d+)\./i);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return max + 1;
 }
 
 async function addPhotos(fileList) {
@@ -693,17 +721,76 @@ barcodeInput.addEventListener('keydown', (e) => {
   }
 });
 
+const copyPhotosBtn = document.getElementById('copy-photos-btn');
+const copyPhotosResult = document.getElementById('copy-photos-result');
+let selectedForCopy = new Set();
+
+function updateCopyPhotosBtn() {
+  const hasPhotosToCopy = currentPhotos.length > 0;
+  const hasTargets = selectedForCopy.size > 0;
+  copyPhotosBtn.style.display = hasPhotosToCopy ? 'block' : 'none';
+  copyPhotosBtn.disabled = !hasTargets;
+}
+
+copyPhotosBtn.addEventListener('click', async () => {
+  if (currentPhotos.length === 0 || selectedForCopy.size === 0) return;
+  const targets = [...selectedForCopy].filter(bc => bc !== currentLookupCode);
+  if (targets.length === 0) {
+    copyPhotosResult.innerHTML = '<span class="warn">Nothing to copy — the checked item already has these photos.</span>';
+    return;
+  }
+
+  copyPhotosBtn.disabled = true;
+  let done = 0;
+  const total = targets.length * currentPhotos.length;
+
+  for (const bc of targets) {
+    const startNum = await nextPhotoNumberFor(bc);
+    for (let i = 0; i < currentPhotos.length; i++) {
+      done++;
+      copyPhotosBtn.textContent = `Copying ${done}/${total}...`;
+      const photo = currentPhotos[i];
+      const rawExt = (photo.name.split('.').pop() || 'jpg').toLowerCase();
+      const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
+      await uploadToOneDrive(`intake/${bc}/photo${startNum + i}.${ext}`, photo.blob, photo.blob.type || 'image/jpeg');
+    }
+  }
+
+  copyPhotosBtn.disabled = false;
+  copyPhotosBtn.textContent = 'Copy current photos to checked items';
+  copyPhotosResult.innerHTML = `<span class="ok">✓ Copied ${currentPhotos.length} photo(s) to ${targets.length} item(s).</span>`;
+  selectedForCopy.clear();
+  renderLog();
+  updateCopyPhotosBtn();
+});
+
 function renderLog() {
   logEl.style.display = scanLog.length ? 'block' : 'none';
   logRows.innerHTML = '';
   scanLog.forEach(item => {
     const row = document.createElement('div');
     row.className = 'log-row';
+
+    const checkWrap = document.createElement('span');
+    if (item.found) {
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'row-check';
+      check.dataset.barcode = item.code;
+      check.checked = selectedForCopy.has(item.code);
+      check.addEventListener('change', () => {
+        if (check.checked) selectedForCopy.add(item.code);
+        else selectedForCopy.delete(item.code);
+        updateCopyPhotosBtn();
+      });
+      checkWrap.appendChild(check);
+    }
+
     const code = document.createElement('span'); code.className = 'code'; code.textContent = item.code;
     const price = document.createElement('span');
     if (item.found) { price.className = 'price'; price.textContent = '$' + parseFloat(item.price).toFixed(2); }
     else { price.className = 'miss'; price.textContent = 'not found'; }
-    row.append(code, price);
+    row.append(checkWrap, code, price);
     logRows.appendChild(row);
   });
 }
