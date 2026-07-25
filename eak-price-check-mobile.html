@@ -54,6 +54,18 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   cursor:pointer;white-space:nowrap}
 #import-input{display:none}
 
+#coverage-btn{
+  display:block;width:100%;margin-bottom:22px;padding:11px;background:none;
+  border:1.5px dashed var(--line);color:var(--gold);border-radius:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.04em;
+  text-transform:uppercase;cursor:pointer;
+}
+#coverage-btn:disabled{opacity:.4}
+#coverage-result{font-size:.85rem;line-height:1.6;margin:-10px 0 22px}
+#coverage-result .ok{color:var(--good)}
+#coverage-result .missing{color:var(--warn)}
+#coverage-result .missing-item{font-family:'IBM Plex Mono',monospace;color:var(--paper);font-size:.78rem}
+
 .step-label{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.14em;
   text-transform:uppercase;color:var(--gold);margin-bottom:10px}
 
@@ -142,6 +154,9 @@ input:checked + .slider:before{transform:translateX(20px)}
   </div>
   <input type="file" id="import-input" accept=".csv" multiple>
 
+  <button id="coverage-btn" style="display:none">Check photo coverage</button>
+  <div id="coverage-result"></div>
+
   <div class="step-label">Scan a barcode</div>
   <div class="barcode-wrap">
     <input type="text" id="barcode-input" class="mono" placeholder="Tap here, then scan" autocomplete="off" inputmode="none">
@@ -203,6 +218,8 @@ const odStatus = document.getElementById('onedrive-status');
 const odConnectBtn = document.getElementById('onedrive-connect-btn');
 const odDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
 const pullBtn = document.getElementById('pull-btn');
+const coverageBtn = document.getElementById('coverage-btn');
+const coverageResult = document.getElementById('coverage-result');
 
 function updateOneDriveUI() {
   const account = msalInstance.getActiveAccount();
@@ -213,12 +230,14 @@ function updateOneDriveUI() {
     odConnectBtn.style.display = 'none';
     odDisconnectBtn.style.display = 'inline-block';
     pullBtn.style.display = 'inline-block';
+    coverageBtn.style.display = 'block';
   } else {
     odStatus.textContent = '☁ Not connected — import CSV manually below';
     odStatus.classList.remove('connected', 'warn');
     odConnectBtn.style.display = 'inline-block';
     odDisconnectBtn.style.display = 'none';
     pullBtn.style.display = 'none';
+    coverageBtn.style.display = 'none';
   }
 }
 
@@ -463,6 +482,40 @@ pullBtn.addEventListener('click', async () => {
   pullBtn.disabled = false;
   pullBtn.textContent = 'Pull latest from OneDrive';
   alert(`Pulled ${csvFiles.length} session file(s) — ${totalNew} row(s) merged. Price book now has ${Object.keys(priceBook).length} item(s).`);
+});
+
+coverageBtn.addEventListener('click', async () => {
+  if (!msalInstance.getActiveAccount()) return;
+  const barcodes = Object.keys(priceBook);
+  if (barcodes.length === 0) {
+    coverageResult.innerHTML = '<span class="missing">No items in the price book yet — import or pull a CSV first.</span>';
+    return;
+  }
+
+  coverageBtn.disabled = true;
+  const missing = [];
+  for (let i = 0; i < barcodes.length; i++) {
+    coverageBtn.textContent = `Checking ${i + 1}/${barcodes.length}...`;
+    const files = await listOneDriveFiles(`intake/${barcodes[i]}`);
+    const hasImage = files && files.some(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+    if (!hasImage) missing.push(barcodes[i]);
+  }
+
+  coverageBtn.disabled = false;
+  coverageBtn.textContent = 'Check photo coverage';
+
+  const withPhotos = barcodes.length - missing.length;
+  if (missing.length === 0) {
+    coverageResult.innerHTML = `<span class="ok">✓ All ${barcodes.length} item(s) in the price book have photos.</span>`;
+  } else {
+    const rows = missing.map(bc => {
+      const entry = priceBook[bc];
+      const label = entry && entry.size ? `${bc} (size ${entry.size})` : bc;
+      return `<div class="missing-item">• ${label}</div>`;
+    }).join('');
+    coverageResult.innerHTML =
+      `<span class="missing">⚠ ${withPhotos} of ${barcodes.length} item(s) have photos — ${missing.length} missing:</span>${rows}`;
+  }
 });
 
 function formatSpokenPrice(priceStr) {
