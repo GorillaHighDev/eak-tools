@@ -203,6 +203,18 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 .log-row .del:active{color:var(--bred)}
 #session-count{color:var(--gold)}
 
+#check-photos-btn{
+  display:block;width:100%;margin-top:16px;padding:12px;background:none;
+  border:1.5px dashed var(--line);color:var(--gold);border-radius:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.04em;
+  text-transform:uppercase;cursor:pointer;
+}
+#check-photos-btn:disabled{opacity:.4}
+#missing-photos-result{margin-top:12px;font-size:.85rem;line-height:1.6}
+#missing-photos-result .ok{color:var(--good)}
+#missing-photos-result .missing{color:var(--warn)}
+#missing-photos-result .missing-item{font-family:'IBM Plex Mono',monospace;color:var(--paper)}
+
 #print-label{display:none}
 @media print {
   @page { size: 2in 1in; margin: 0.06in; }
@@ -317,6 +329,9 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
       <input type="text" id="f-notes" inputmode="text" enterkeyhint="done">
     </div>
 
+    <div id="save-blocked-hint" style="display:none;color:var(--warn);font-size:.78rem;text-align:center;margin-bottom:10px">
+      ⚠ Connect OneDrive above before saving — items can't be added while disconnected.
+    </div>
     <button id="save-btn" disabled>Save &amp; next item</button>
     <div id="save-flash" class="mono"></div>
   </div>
@@ -331,6 +346,8 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   <div id="log" style="display:none">
     <h2><span id="session-count">0</span> items priced this session</h2>
     <div id="log-rows"></div>
+    <button id="check-photos-btn" type="button">Check OneDrive for missing photos</button>
+    <div id="missing-photos-result"></div>
   </div>
 </main>
 
@@ -388,11 +405,13 @@ function updateOneDriveUI() {
     odConnectBtn.style.display = 'none';
     odDisconnectBtn.style.display = 'inline-block';
   } else {
-    odStatus.textContent = '☁ Not connected — saving to this phone only';
-    odStatus.classList.remove('connected', 'warn');
+    odStatus.textContent = '☁ Not connected — connect to add items';
+    odStatus.classList.remove('connected');
+    odStatus.classList.add('warn');
     odConnectBtn.style.display = 'inline-block';
     odDisconnectBtn.style.display = 'none';
   }
+  updateSaveState();
 }
 
 odConnectBtn.addEventListener('click', () => {
@@ -438,6 +457,23 @@ async function uploadToOneDrive(relativePath, content, contentType) {
   }
 }
 
+// Returns the array of items in a EAK-Sync subfolder, or null if the folder
+// doesn't exist / can't be reached (never throws — callers treat null as unknown).
+async function listOneDriveFiles(folderPath) {
+  const token = await getGraphToken();
+  if (!token) return null;
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(folderPath)}:/children`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.value || [];
+  } catch (err) {
+    console.warn('OneDrive list failed:', folderPath, err);
+    return null;
+  }
+}
+
 (async () => {
   try {
     await msalInstance.initialize();
@@ -465,6 +501,8 @@ const newSessionBtn = document.getElementById('new-session-btn');
 const logEl = document.getElementById('log');
 const logRows = document.getElementById('log-rows');
 const sessionCountEl = document.getElementById('session-count');
+const checkPhotosBtn = document.getElementById('check-photos-btn');
+const missingPhotosResult = document.getElementById('missing-photos-result');
 
 const fPrice = document.getElementById('f-price');
 const fBrand = document.getElementById('f-brand');
@@ -905,7 +943,13 @@ function updateSaveState() {
   const priceOk = fPrice.value.trim() !== '' && !isNaN(parseFloat(fPrice.value));
   const rowsValid = getValidSizeRows().length > 0;
   const photosOk = attachedFiles.length > 0;
-  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid && photosOk);
+  const oneDriveOk = !!msalInstance.getActiveAccount();
+  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid && photosOk && oneDriveOk);
+
+  const hint = document.getElementById('save-blocked-hint');
+  if (hint) {
+    hint.style.display = (lockedBarcode && !oneDriveOk) ? 'block' : 'none';
+  }
 }
 
 function csvEscape(val) {
@@ -1060,6 +1104,41 @@ newSessionBtn.addEventListener('click', () => {
   store.del(STORE_KEY);
   refreshUI();
   barcodeInput.focus();
+});
+
+checkPhotosBtn.addEventListener('click', async () => {
+  if (!msalInstance.getActiveAccount()) {
+    missingPhotosResult.innerHTML = '<span class="missing">⚠ Connect OneDrive first — this checks what\'s actually in your EAK-Sync folder.</span>';
+    return;
+  }
+  const barcodes = [...new Set(sessionItems.map(item => item.barcode))];
+  if (barcodes.length === 0) {
+    missingPhotosResult.innerHTML = '<span class="missing">No items logged this session yet.</span>';
+    return;
+  }
+
+  checkPhotosBtn.disabled = true;
+  const missing = [];
+  for (let i = 0; i < barcodes.length; i++) {
+    checkPhotosBtn.textContent = `Checking ${i + 1}/${barcodes.length}...`;
+    const files = await listOneDriveFiles(`intake/${barcodes[i]}`);
+    // null = folder not found/unreachable, [] = folder exists but empty — both mean no photos there
+    if (!files || files.length === 0) missing.push(barcodes[i]);
+  }
+
+  checkPhotosBtn.disabled = false;
+  checkPhotosBtn.textContent = 'Check OneDrive for missing photos';
+
+  if (missing.length === 0) {
+    missingPhotosResult.innerHTML = `<span class="ok">✓ All ${barcodes.length} item(s) this session have photos in OneDrive.</span>`;
+  } else {
+    const rows = missing.map(bc => {
+      const item = sessionItems.find(i => i.barcode === bc);
+      const label = item ? `${bc} (size ${item.size})` : bc;
+      return `<div class="missing-item">• ${label}</div>`;
+    }).join('');
+    missingPhotosResult.innerHTML = `<span class="missing">⚠ ${missing.length} of ${barcodes.length} item(s) have no photos in OneDrive:</span>${rows}`;
+  }
 });
 
 function deleteItem(id) {
