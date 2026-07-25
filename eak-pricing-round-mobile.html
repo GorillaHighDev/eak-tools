@@ -62,6 +62,35 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 }
 .field input:focus{outline:none;border-color:var(--gold)}
 
+#size-rows{margin-bottom:10px}
+.size-row{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px}
+.row-barcode-wrap{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.row-barcode-wrap input{
+  flex:1;min-width:0;padding:11px 12px;font-size:.9rem;
+  background:var(--ink);border:1.5px solid var(--line);border-radius:5px;color:#fff;
+}
+.row-barcode-wrap input:focus{outline:none;border-color:var(--gold)}
+.row-barcode-wrap input.locked{border-color:var(--good)}
+.row-barcode-hint{font-size:.7rem;color:var(--concrete);min-height:1.1em;margin-bottom:8px;padding-left:2px}
+.row-barcode-hint.warn{color:var(--warn)}
+.row-bottom{display:grid;grid-template-columns:1fr 84px;gap:8px}
+.row-bottom input{
+  width:100%;padding:13px 14px;font-family:'Space Grotesk',sans-serif;font-size:1rem;
+  background:var(--ink);border:1.5px solid var(--line);border-radius:5px;color:#fff;
+}
+.row-bottom input:focus{outline:none;border-color:var(--gold)}
+.row-remove{
+  width:34px;height:38px;flex-shrink:0;background:transparent;border:1.5px solid var(--line);border-radius:5px;
+  color:var(--concrete);font-size:1.1rem;line-height:1;cursor:pointer;
+}
+.row-remove:active{border-color:var(--bred);color:var(--bred)}
+#add-size-btn{
+  display:block;width:100%;text-align:center;background:none;border:1.5px dashed var(--line);
+  color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.06em;
+  text-transform:uppercase;padding:11px 0;border-radius:5px;cursor:pointer;
+}
+#add-size-btn:active{border-color:var(--gold)}
+
 .btn-secondary{
   width:100%;padding:15px;background:transparent;border:1.5px solid var(--gold);color:var(--gold);
   border-radius:5px;font-weight:700;font-size:.85rem;letter-spacing:.05em;text-transform:uppercase;
@@ -195,26 +224,18 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   <div id="entry-form">
     <div class="step-label">2 · Enter the details</div>
 
-    <div class="two-col">
-      <div class="field">
-        <label>Size <span class="req">*</span></label>
-        <input type="text" id="f-size" inputmode="text" enterkeyhint="next">
-      </div>
-      <div class="field price">
-        <label>Price <span class="req">*</span></label>
-        <input type="text" id="f-price" inputmode="decimal" placeholder="0.00" enterkeyhint="next">
-      </div>
+    <div class="field price">
+      <label>Price <span class="req">*</span></label>
+      <input type="text" id="f-price" inputmode="decimal" placeholder="0.00" enterkeyhint="next">
     </div>
 
-    <div class="two-col">
-      <div class="field">
-        <label>Qty <span class="req">*</span></label>
-        <input type="text" id="f-qty" inputmode="numeric" value="1" enterkeyhint="next">
-      </div>
-      <div class="field">
-        <label>Brand</label>
-        <input type="text" id="f-brand" inputmode="text" enterkeyhint="next">
-      </div>
+    <div class="step-label" style="margin-top:18px">Sizes — scan each one's own barcode <span class="req">*</span></div>
+    <div id="size-rows"></div>
+    <button type="button" id="add-size-btn">+ Add another size</button>
+
+    <div class="field" style="margin-top:18px">
+      <label>Brand</label>
+      <input type="text" id="f-brand" inputmode="text" enterkeyhint="next">
     </div>
 
     <div class="field">
@@ -274,12 +295,12 @@ const logEl = document.getElementById('log');
 const logRows = document.getElementById('log-rows');
 const sessionCountEl = document.getElementById('session-count');
 
-const fSize = document.getElementById('f-size');
 const fPrice = document.getElementById('f-price');
-const fQty = document.getElementById('f-qty');
 const fBrand = document.getElementById('f-brand');
 const fNotes = document.getElementById('f-notes');
-const fieldChain = [fSize, fPrice, fQty, fBrand, fNotes];
+const sizeRowsContainer = document.getElementById('size-rows');
+const addSizeBtn = document.getElementById('add-size-btn');
+const fieldChain = [fBrand, fNotes];
 
 // ---- UPC/EAN check-digit validation (soft warning only) ----
 function checkDigitStatus(code) {
@@ -294,6 +315,154 @@ function checkDigitStatus(code) {
   }
   return sum % 10 === 0;
 }
+
+// ---- Dynamic size rows (each size gets its OWN barcode — apparel tags are size-specific) ----
+function createSizeRow() {
+  const row = document.createElement('div');
+  row.className = 'size-row';
+  row.innerHTML =
+    '<div class="row-barcode-wrap">' +
+      '<input type="text" class="row-barcode mono" placeholder="Scan or type this size\'s barcode" inputmode="text" autocomplete="off">' +
+      '<button type="button" class="row-remove" aria-label="Remove size">×</button>' +
+    '</div>' +
+    '<div class="row-barcode-hint mono"></div>' +
+    '<div class="row-bottom">' +
+      '<input type="text" class="row-size" placeholder="Size" inputmode="text" enterkeyhint="next">' +
+      '<input type="text" class="row-qty" placeholder="Qty" inputmode="numeric" value="1" enterkeyhint="next">' +
+    '</div>';
+  sizeRowsContainer.appendChild(row);
+  updateRemoveButtonVisibility();
+  return row;
+}
+
+function updateRemoveButtonVisibility() {
+  const rows = sizeRowsContainer.querySelectorAll('.size-row');
+  sizeRowsContainer.querySelectorAll('.row-remove').forEach(btn => {
+    btn.style.visibility = rows.length > 1 ? 'visible' : 'hidden';
+  });
+}
+
+// Same soft-warning philosophy as the main scan field: never block, always inform.
+function validateRowBarcode(row) {
+  const bcInput = row.querySelector('.row-barcode');
+  const hint = row.querySelector('.row-barcode-hint');
+  const val = bcInput.value.trim();
+  bcInput.classList.remove('locked');
+  hint.classList.remove('warn');
+  hint.textContent = '';
+  if (!val) return;
+
+  const dupSaved = sessionItems.some(item => item.barcode === val);
+  const dupHere = [...sizeRowsContainer.querySelectorAll('.size-row')]
+    .filter(r => r !== row)
+    .some(r => r.querySelector('.row-barcode').value.trim() === val);
+  const check = checkDigitStatus(val);
+
+  if (dupHere) {
+    hint.textContent = '⚠ Same barcode as another size above — check the tags.';
+    hint.classList.add('warn');
+  } else if (dupSaved) {
+    hint.textContent = '⚠ Already logged this session.';
+    hint.classList.add('warn');
+  } else if (check === false) {
+    hint.textContent = '⚠ Check digit doesn\u2019t validate — worth a re-scan.';
+    hint.classList.add('warn');
+  } else {
+    bcInput.classList.add('locked');
+  }
+}
+
+function resetSizeRows(prefillBarcode) {
+  sizeRowsContainer.innerHTML = '';
+  const row = createSizeRow();
+  if (prefillBarcode) {
+    row.querySelector('.row-barcode').value = prefillBarcode;
+    validateRowBarcode(row);
+  }
+}
+
+function getValidSizeRows() {
+  return [...sizeRowsContainer.querySelectorAll('.size-row')]
+    .map(row => {
+      const barcode = row.querySelector('.row-barcode').value.trim();
+      const size = row.querySelector('.row-size').value.trim();
+      const qty = parseInt(row.querySelector('.row-qty').value);
+      return { barcode, size, qty };
+    })
+    .filter(r => r.barcode !== '' && r.size !== '' && !isNaN(r.qty) && r.qty > 0);
+}
+
+sizeRowsContainer.addEventListener('input', (e) => {
+  if (e.target.classList.contains('row-barcode')) {
+    const row = e.target.closest('.size-row');
+    validateRowBarcode(row);
+    updateSaveState();
+
+    // Same scanner-with-no-terminator safety net as the main field: auto-advance
+    // to Size once the scan pauses, so a missing Enter never dead-ends a row.
+    clearTimeout(e.target._scanTimer);
+    const val = e.target.value.trim();
+    if (val.length >= 6) {
+      e.target._scanTimer = setTimeout(() => {
+        if (e.target.value.trim() === val) {
+          row.querySelector('.row-size').focus();
+        }
+      }, 300);
+    }
+    return;
+  }
+  if (e.target.classList.contains('row-size') || e.target.classList.contains('row-qty')) {
+    updateSaveState();
+  }
+});
+
+sizeRowsContainer.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const target = e.target;
+  const row = target.closest('.size-row');
+  if (!row) return;
+  if (target.classList.contains('row-barcode')) {
+    e.preventDefault();
+    clearTimeout(target._scanTimer);
+    row.querySelector('.row-size').focus();
+  } else if (target.classList.contains('row-size')) {
+    e.preventDefault();
+    row.querySelector('.row-qty').focus();
+  } else if (target.classList.contains('row-qty')) {
+    e.preventDefault();
+    const allRows = [...sizeRowsContainer.querySelectorAll('.size-row')];
+    const idx = allRows.indexOf(row);
+    if (idx === allRows.length - 1) {
+      const sizeVal = row.querySelector('.row-size').value.trim();
+      if (sizeVal !== '') {
+        createSizeRow().querySelector('.row-barcode').focus();
+      }
+    } else {
+      allRows[idx + 1].querySelector('.row-barcode').focus();
+    }
+  }
+});
+
+sizeRowsContainer.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('row-remove')) return;
+  const rows = sizeRowsContainer.querySelectorAll('.size-row');
+  if (rows.length <= 1) return;
+  e.target.closest('.size-row').remove();
+  updateRemoveButtonVisibility();
+  updateSaveState();
+});
+
+addSizeBtn.addEventListener('click', () => {
+  createSizeRow().querySelector('.row-barcode').focus();
+});
+
+fPrice.addEventListener('input', updateSaveState);
+fPrice.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
+  if (firstSizeInput) firstSizeInput.focus();
+});
 
 // ---- Generate-a-barcode panel ----
 const noBarcodeToggle = document.getElementById('no-barcode-toggle');
@@ -359,7 +528,8 @@ useGeneratedBtn.addEventListener('click', () => {
   if (!currentGeneratedSKU) return;
   lockBarcode(currentGeneratedSKU);
   generatePanel.classList.remove('show');
-  fSize.value = generatedSize;
+  const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
+  if (firstSizeInput) firstSizeInput.value = generatedSize;
   fBrand.value = generatedBrand;
   fPrice.focus();
   updateSaveState();
@@ -388,12 +558,9 @@ function lockBarcode(val) {
     barcodeHint.textContent = 'Locked in — fill in the details below.';
   }
 
-  if (val !== currentGeneratedSKU) {
-    fSize.value = ''; fPrice.value = ''; fQty.value = '1'; fBrand.value = ''; fNotes.value = '';
-    fSize.focus();
-  } else {
-    fPrice.value = ''; fQty.value = '1'; fNotes.value = '';
-  }
+  fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
+  resetSizeRows(val);
+  fPrice.focus();
   updateSaveState();
 }
 
@@ -458,9 +625,8 @@ fieldChain.forEach((field, i) => {
 
 function updateSaveState() {
   const priceOk = fPrice.value.trim() !== '' && !isNaN(parseFloat(fPrice.value));
-  const qtyOk = fQty.value.trim() !== '' && !isNaN(parseInt(fQty.value));
-  const sizeOk = fSize.value.trim() !== '';
-  saveBtn.disabled = !(lockedBarcode && sizeOk && priceOk && qtyOk);
+  const rowsValid = getValidSizeRows().length > 0;
+  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid);
 }
 
 function csvEscape(val) {
@@ -476,20 +642,26 @@ function persist() {
 saveBtn.addEventListener('click', () => {
   if (saveBtn.disabled) return;
 
-  const item = {
+  const rows = getValidSizeRows();
+  const price = parseFloat(fPrice.value).toFixed(2);
+  const brand = fBrand.value.trim();
+  const notes = fNotes.value.trim();
+
+  const addedItems = rows.map(r => ({
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-    barcode: lockedBarcode,
-    size: fSize.value.trim(),
-    price: parseFloat(fPrice.value).toFixed(2),
-    qty: parseInt(fQty.value) || 0,
-    brand: fBrand.value.trim(),
-    notes: fNotes.value.trim(),
-  };
-  sessionItems.push(item);
+    barcode: r.barcode,
+    size: r.size,
+    price,
+    qty: r.qty,
+    brand,
+    notes,
+  }));
+  sessionItems.push(...addedItems);
   persist();
   refreshUI();
 
-  saveFlash.textContent = `✓ ${item.barcode} — $${item.price}, size ${item.size}`;
+  const summary = addedItems.map(i => `${i.size}×${i.qty}`).join(', ');
+  saveFlash.textContent = `✓ ${addedItems.length} size${addedItems.length > 1 ? 's' : ''} logged — $${price} — ${summary}`;
   saveFlash.classList.add('show');
   setTimeout(() => saveFlash.classList.remove('show'), 2500);
 
@@ -504,6 +676,8 @@ saveBtn.addEventListener('click', () => {
   generatedPreview.classList.remove('show');
   useGeneratedBtn.style.display = 'none';
   gBrand.value = ''; gStyle.value = ''; gColor.value = ''; gSize.value = '';
+  fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
+  resetSizeRows();
   updateSaveState();
   barcodeInput.focus();
 });
@@ -571,6 +745,7 @@ function refreshUI() {
 }
 
 // Restore any previous session on load
+resetSizeRows();
 refreshUI();
 barcodeInput.focus();
 </script>
