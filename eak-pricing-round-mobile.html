@@ -91,6 +91,21 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 }
 #add-size-btn:active{border-color:var(--gold)}
 
+.photo-btn{
+  width:100%;padding:20px;background:var(--panel);border:2px dashed var(--line);border-radius:8px;
+  color:var(--paper);font-family:inherit;font-size:1rem;cursor:pointer;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:center;gap:10px;transition:border-color .15s;
+}
+.photo-btn:active{border-color:var(--gold)}
+.photo-btn .plus{font-family:'Anton',sans-serif;font-size:1.5rem;color:var(--gold)}
+#camera-input,#library-input{display:none}
+
+#thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}
+.thumb{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:4px;right:4px;background:rgba(13,13,15,.85);color:#fff;
+  border:none;border-radius:50%;width:26px;height:26px;font-size:.85rem}
+
 .btn-secondary{
   width:100%;padding:15px;background:transparent;border:1.5px solid var(--gold);color:var(--gold);
   border-radius:5px;font-weight:700;font-size:.85rem;letter-spacing:.05em;text-transform:uppercase;
@@ -233,6 +248,17 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
     <div id="size-rows"></div>
     <button type="button" id="add-size-btn">+ Add another size</button>
 
+    <div class="step-label" style="margin-top:18px">Photos — front/back/tag, covers every size above <span class="req">*</span></div>
+    <button type="button" class="photo-btn" id="camera-btn">
+      <span class="plus">+</span> Take a photo
+    </button>
+    <button type="button" class="photo-btn" id="library-btn">
+      <span class="plus">▤</span> Choose from library
+    </button>
+    <input type="file" id="camera-input" accept="image/*" capture="environment">
+    <input type="file" id="library-input" accept="image/*" multiple>
+    <div id="thumbs"></div>
+
     <div class="field" style="margin-top:18px">
       <label>Brand</label>
       <input type="text" id="f-brand" inputmode="text" enterkeyhint="next">
@@ -275,9 +301,12 @@ const store = {
   del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
 const STORE_KEY = 'eak-pricing-session';
+const PHOTO_COUNTER_KEY = 'eak-pricing-photo-counters';
 
 let lockedBarcode = null;
 let sessionItems = store.get(STORE_KEY) || [];
+let photoCounters = store.get(PHOTO_COUNTER_KEY) || {}; // { barcode: highestNumberUsed }
+let attachedFiles = [];
 let generatedSize = '';
 let generatedBrand = '';
 
@@ -300,7 +329,14 @@ const fBrand = document.getElementById('f-brand');
 const fNotes = document.getElementById('f-notes');
 const sizeRowsContainer = document.getElementById('size-rows');
 const addSizeBtn = document.getElementById('add-size-btn');
+const cameraBtn = document.getElementById('camera-btn');
+const libraryBtn = document.getElementById('library-btn');
+const cameraInput = document.getElementById('camera-input');
+const libraryInput = document.getElementById('library-input');
+const thumbsEl = document.getElementById('thumbs');
 const fieldChain = [fBrand, fNotes];
+
+const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 // ---- UPC/EAN check-digit validation (soft warning only) ----
 function checkDigitStatus(code) {
@@ -464,6 +500,48 @@ fPrice.addEventListener('keydown', (e) => {
   if (firstSizeInput) firstSizeInput.focus();
 });
 
+// ---- Photos — one shoot covers every size scanned above ----
+cameraBtn.addEventListener('click', () => cameraInput.click());
+libraryBtn.addEventListener('click', () => libraryInput.click());
+
+cameraInput.addEventListener('change', () => {
+  if (cameraInput.files && cameraInput.files[0]) {
+    attachedFiles.push(cameraInput.files[0]);
+    renderThumbs();
+    updateSaveState();
+  }
+  cameraInput.value = '';
+});
+libraryInput.addEventListener('change', () => {
+  for (const f of libraryInput.files) {
+    if (f.type.startsWith('image/')) attachedFiles.push(f);
+  }
+  renderThumbs();
+  updateSaveState();
+  libraryInput.value = '';
+});
+
+function renderThumbs() {
+  thumbsEl.innerHTML = '';
+  attachedFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(f);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '×';
+    btn.onclick = () => { attachedFiles.splice(i, 1); renderThumbs(); updateSaveState(); };
+    div.appendChild(img); div.appendChild(btn);
+    thumbsEl.appendChild(div);
+  });
+}
+
+function resetPhotos() {
+  attachedFiles = [];
+  renderThumbs();
+}
+
 // ---- Generate-a-barcode panel ----
 const noBarcodeToggle = document.getElementById('no-barcode-toggle');
 const generatePanel = document.getElementById('generate-panel');
@@ -560,6 +638,7 @@ function lockBarcode(val) {
 
   fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
   resetSizeRows(val);
+  resetPhotos();
   fPrice.focus();
   updateSaveState();
 }
@@ -626,7 +705,8 @@ fieldChain.forEach((field, i) => {
 function updateSaveState() {
   const priceOk = fPrice.value.trim() !== '' && !isNaN(parseFloat(fPrice.value));
   const rowsValid = getValidSizeRows().length > 0;
-  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid);
+  const photosOk = attachedFiles.length > 0;
+  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid && photosOk);
 }
 
 function csvEscape(val) {
@@ -639,8 +719,13 @@ function persist() {
   store.set(STORE_KEY, sessionItems);
 }
 
-saveBtn.addEventListener('click', () => {
+function persistPhotoCounters() {
+  store.set(PHOTO_COUNTER_KEY, photoCounters);
+}
+
+saveBtn.addEventListener('click', async () => {
   if (saveBtn.disabled) return;
+  saveBtn.disabled = true;
 
   const rows = getValidSizeRows();
   const price = parseFloat(fPrice.value).toFixed(2);
@@ -660,8 +745,36 @@ saveBtn.addEventListener('click', () => {
   persist();
   refreshUI();
 
+  // Photos — one shoot, saved once per barcode scanned above so the sorter
+  // and Claude Code pipeline still find a full photo set under every size.
+  const uniqueBarcodes = [...new Set(rows.map(r => r.barcode))];
+  const totalSteps = uniqueBarcodes.length * attachedFiles.length;
+  let step = 0;
+  for (const bc of uniqueBarcodes) {
+    const startNum = photoCounters[bc] || 0;
+    for (let i = 0; i < attachedFiles.length; i++) {
+      step++;
+      saveBtn.textContent = `Saving photos ${step}/${totalSteps}...`;
+      const file = attachedFiles[i];
+      const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
+      const filename = `${bc}_${startNum + i + 1}.${ext}`;
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      if (step < totalSteps) await delay(400);
+    }
+    photoCounters[bc] = startNum + attachedFiles.length;
+  }
+  persistPhotoCounters();
+
   const summary = addedItems.map(i => `${i.size}×${i.qty}`).join(', ');
-  saveFlash.textContent = `✓ ${addedItems.length} size${addedItems.length > 1 ? 's' : ''} logged — $${price} — ${summary}`;
+  saveFlash.textContent = `✓ ${addedItems.length} size${addedItems.length > 1 ? 's' : ''} logged — $${price} — ${summary} — ${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each`;
   saveFlash.classList.add('show');
   setTimeout(() => saveFlash.classList.remove('show'), 2500);
 
@@ -678,6 +791,8 @@ saveBtn.addEventListener('click', () => {
   gBrand.value = ''; gStyle.value = ''; gColor.value = ''; gSize.value = '';
   fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
   resetSizeRows();
+  resetPhotos();
+  saveBtn.textContent = 'Save & next item';
   updateSaveState();
   barcodeInput.focus();
 });
