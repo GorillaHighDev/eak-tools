@@ -71,6 +71,8 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   padding:18px;margin-bottom:20px}
 #generate-panel.show{display:block}
 #generate-panel .step-label{margin-bottom:14px}
+#sku-length-hint{font-size:.75rem;color:var(--concrete);text-align:center;margin-bottom:10px}
+#sku-length-hint.warn{color:var(--warn);font-weight:700}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field{margin-bottom:14px}
 .field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
@@ -118,6 +120,8 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   border-radius:5px;color:#fff;width:100%;
 }
 .row-generate-fields input:focus{outline:none;border-color:var(--gold)}
+.row-sku-length-hint{font-size:.72rem;color:var(--concrete);margin-bottom:6px}
+.row-sku-length-hint.warn{color:var(--warn);font-weight:700}
 .row-generate-btn{
   width:100%;padding:12px;background:var(--gold);color:var(--ink);border:none;border-radius:5px;
   font-weight:700;font-size:.8rem;cursor:pointer;font-family:inherit;
@@ -287,6 +291,7 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
         <input type="text" id="g-size">
       </div>
     </div>
+    <div id="sku-length-hint" class="mono"></div>
     <button class="btn-secondary" id="generate-btn">Generate barcode</button>
 
     <div id="generated-preview">
@@ -667,6 +672,7 @@ function createSizeRow() {
         '<input type="text" class="row-gen-style mono" placeholder="Style / SKU">' +
         '<input type="text" class="row-gen-color mono" placeholder="Color">' +
       '</div>' +
+      '<div class="row-sku-length-hint mono"></div>' +
       '<button type="button" class="row-generate-btn">Generate &amp; print label for this size</button>' +
       '<div class="row-generated-sku mono"></div>' +
     '</div>';
@@ -733,6 +739,26 @@ function getValidSizeRows() {
 }
 
 sizeRowsContainer.addEventListener('input', (e) => {
+  if (e.target.classList.contains('row-gen-style') || e.target.classList.contains('row-gen-color')) {
+    const row = e.target.closest('.size-row');
+    const sizeVal = row.querySelector('.row-size').value.trim();
+    const styleVal = row.querySelector('.row-gen-style').value.trim();
+    const colorVal = row.querySelector('.row-gen-color').value.trim();
+    const sku = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
+    const hint = row.querySelector('.row-sku-length-hint');
+    const len = sku.length || 0;
+    if (len === 0) {
+      hint.textContent = '';
+      hint.classList.remove('warn');
+    } else if (len > MAX_SKU_LENGTH) {
+      hint.textContent = `⚠ ${len}/${MAX_SKU_LENGTH} characters — too long to scan reliably.`;
+      hint.classList.add('warn');
+    } else {
+      hint.textContent = `${len}/${MAX_SKU_LENGTH} characters — safe to scan.`;
+      hint.classList.remove('warn');
+    }
+    return;
+  }
   if (e.target.classList.contains('row-barcode')) {
     const row = e.target.closest('.size-row');
     validateRowBarcode(row);
@@ -895,7 +921,32 @@ function buildSKU(brand, style, color, size) {
     .filter(Boolean).join('-');
 }
 
+// A CODE128 barcode gets physically denser (thinner bars) the more characters it
+// encodes. On a 2" label, 16 characters is the tested ceiling for a reliable scan
+// margin (~9 mil/bar) — past this, real testing showed labels too dense to read.
+const MAX_SKU_LENGTH = 16;
+
 let currentGeneratedSKU = null;
+
+const skuLengthHint = document.getElementById('sku-length-hint');
+
+function updateSkuLengthHint() {
+  const sku = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
+  const len = sku.length || 0;
+  if (len === 0) {
+    skuLengthHint.textContent = '';
+    skuLengthHint.classList.remove('warn');
+    return;
+  }
+  if (len > MAX_SKU_LENGTH) {
+    skuLengthHint.textContent = `⚠ ${len}/${MAX_SKU_LENGTH} characters — too long to scan reliably. Shorten Brand/Style/Color.`;
+    skuLengthHint.classList.add('warn');
+  } else {
+    skuLengthHint.textContent = `${len}/${MAX_SKU_LENGTH} characters — safe to scan.`;
+    skuLengthHint.classList.remove('warn');
+  }
+}
+[gBrand, gStyle, gColor, gSize].forEach(el => el.addEventListener('input', updateSkuLengthHint));
 
 generateBtn.addEventListener('click', () => {
   if (!gBrand.value.trim() || !gSize.value.trim()) {
@@ -903,6 +954,10 @@ generateBtn.addEventListener('click', () => {
     return;
   }
   const sku = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
+  if (sku.length > MAX_SKU_LENGTH) {
+    alert(`That's ${sku.length} characters — ${sku.length - MAX_SKU_LENGTH} too many to print as a reliably scannable barcode on this label. Shorten Brand, Style, and/or Color and try again.`);
+    return;
+  }
   currentGeneratedSKU = sku;
   generatedSize = gSize.value.trim();
   generatedBrand = gBrand.value.trim();
@@ -988,6 +1043,11 @@ sizeRowsContainer.addEventListener('click', (e) => {
     const styleVal = row.querySelector('.row-gen-style').value.trim();
     const colorVal = row.querySelector('.row-gen-color').value.trim();
     const sku = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
+
+    if (sku.length > MAX_SKU_LENGTH) {
+      alert(`That's ${sku.length} characters — ${sku.length - MAX_SKU_LENGTH} too many to print as a reliably scannable barcode on this label. Shorten Style and/or Color and try again.`);
+      return;
+    }
 
     itemGenStyle = styleVal;
     itemGenColor = colorVal;
