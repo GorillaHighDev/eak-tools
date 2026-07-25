@@ -363,7 +363,7 @@ const msalConfig = {
   auth: {
     clientId: '12101a8e-26f6-4965-85fe-3d762062e8ca',
     authority: 'https://login.microsoftonline.com/common',
-    redirectUri: 'https://gorillahighdev.github.io/eak-tools/',
+    redirectUri: window.location.origin + window.location.pathname,
   },
   cache: { cacheLocation: 'localStorage' }, // survives closing the tab / phone app switches
 };
