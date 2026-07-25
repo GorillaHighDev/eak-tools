@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>EAK Intake Capture</title>
+<script src="./msal-browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -19,6 +20,21 @@ body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotes
 header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
 header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
 header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+#onedrive-bar{
+  max-width:480px;margin:0 auto;padding:10px 5vw;display:flex;align-items:center;
+  justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);
+  background:var(--panel);flex-wrap:wrap;
+}
+#onedrive-status{font-size:.68rem;color:var(--concrete);letter-spacing:.02em}
+#onedrive-status.connected{color:var(--good)}
+#onedrive-status.warn{color:var(--warn)}
+#onedrive-bar button{
+  background:none;border:1px solid var(--gold);color:var(--gold);border-radius:5px;
+  padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+}
+#onedrive-disconnect-btn{border-color:var(--line);color:var(--concrete)}
 
 main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 
@@ -108,6 +124,12 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   <span class="mono">Scan → snap → save → next</span>
 </header>
 
+<div id="onedrive-bar">
+  <span id="onedrive-status" class="mono">☁ Checking OneDrive…</span>
+  <button id="onedrive-connect-btn" type="button" style="display:none">Connect OneDrive</button>
+  <button id="onedrive-disconnect-btn" type="button" style="display:none">Disconnect</button>
+</div>
+
 <main>
   <div class="note">Pair your Bluetooth scanner in your phone's Bluetooth settings first,
   the same way you'd pair a keyboard. Once paired, tap the barcode field below and scan —
@@ -161,6 +183,93 @@ let attachedFiles = [];
 let lockedBarcode = null;
 // { items: [{barcode,count}], counters: {barcode: highestNumberUsed} }
 let session = store.get(STORE_KEY) || { items: [], counters: {} };
+
+// ---- OneDrive sync (Microsoft Graph API) — same setup as the pricing tool ----
+const GRAPH_SCOPES = ['Files.ReadWrite', 'offline_access', 'User.Read'];
+const msalConfig = {
+  auth: {
+    clientId: '12101a8e-26f6-4965-85fe-3d762062e8ca',
+    authority: 'https://login.microsoftonline.com/common',
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: 'localStorage' },
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+const odStatus = document.getElementById('onedrive-status');
+const odConnectBtn = document.getElementById('onedrive-connect-btn');
+const odDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
+
+function updateOneDriveUI() {
+  const account = msalInstance.getActiveAccount();
+  if (account) {
+    odStatus.textContent = `☁ Syncing to OneDrive — ${account.username}`;
+    odStatus.classList.add('connected');
+    odStatus.classList.remove('warn');
+    odConnectBtn.style.display = 'none';
+    odDisconnectBtn.style.display = 'inline-block';
+  } else {
+    odStatus.textContent = '☁ Not connected — saving to this phone only';
+    odStatus.classList.remove('connected', 'warn');
+    odConnectBtn.style.display = 'inline-block';
+    odDisconnectBtn.style.display = 'none';
+  }
+}
+
+odConnectBtn.addEventListener('click', () => {
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+});
+odDisconnectBtn.addEventListener('click', () => {
+  msalInstance.setActiveAccount(null);
+  updateOneDriveUI();
+});
+
+async function getGraphToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) return null;
+  try {
+    const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return result.accessToken;
+  } catch (err) {
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES });
+    return null;
+  }
+}
+
+function encodeGraphPath(path) {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
+async function uploadToOneDrive(relativePath, content, contentType) {
+  try {
+    const token = await getGraphToken();
+    if (!token) return false;
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+      body: content,
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('OneDrive upload failed:', relativePath, err);
+    return false;
+  }
+}
+
+(async () => {
+  try {
+    await msalInstance.initialize();
+    await msalInstance.handleRedirectPromise();
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0 && !msalInstance.getActiveAccount()) {
+      msalInstance.setActiveAccount(accounts[0]);
+    }
+  } catch (err) {
+    console.warn('OneDrive sign-in check failed:', err);
+  }
+  updateOneDriveUI();
+})();
 
 const barcodeInput = document.getElementById('barcode-input');
 const barcodeHint = document.getElementById('barcode-hint');
@@ -368,28 +477,37 @@ saveBtn.addEventListener('click', async () => {
   const allBarcodes = [...new Set([lockedBarcode, ...getExtraBarcodes()])];
   const totalSteps = allBarcodes.length * attachedFiles.length;
   let step = 0;
+  let photosLocalCount = 0;
+  const onlineSync = !!msalInstance.getActiveAccount();
 
-  // Staggered downloads — firing them all at once is unreliable on phones.
-  // Same photo bytes are downloaded once per barcode so the sorter/pipeline
-  // still finds a full photo set under every size's own barcode.
+  // Each photo tries OneDrive first (if connected); anything that fails or
+  // isn't connected falls back to a local download, so nothing is ever lost.
   for (const bc of allBarcodes) {
     const startNum = session.counters[bc] || 0;
     for (let i = 0; i < attachedFiles.length; i++) {
       step++;
-      saveBtn.textContent = `Saving ${step}/${totalSteps}...`;
       const file = attachedFiles[i];
       const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
       const filename = `${bc}_${startNum + i + 1}.${ext}`;
-      const url = URL.createObjectURL(file);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      if (step < totalSteps) await delay(400);
+      let synced = false;
+      if (onlineSync) {
+        saveBtn.textContent = `Syncing ${step}/${totalSteps}...`;
+        synced = await uploadToOneDrive(`intake/${bc}/photo${startNum + i + 1}.${ext}`, file, file.type || 'image/jpeg');
+      }
+      if (!synced) {
+        photosLocalCount++;
+        saveBtn.textContent = `Saving ${step}/${totalSteps}...`;
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        await delay(400);
+      }
     }
     session.counters[bc] = startNum + attachedFiles.length;
   }
@@ -401,7 +519,12 @@ saveBtn.addEventListener('click', async () => {
   const bcSummary = allBarcodes.length > 1
     ? `${allBarcodes.length} sizes (${allBarcodes.join(', ')})`
     : allBarcodes[0];
-  saveFlash.textContent = `✓ ${bcSummary} — ${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each, saved to Downloads`;
+  const syncNote = !onlineSync
+    ? `${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each, saved to Downloads`
+    : photosLocalCount === 0
+      ? 'synced to OneDrive ☁'
+      : `⚠ partial sync — ${photosLocalCount} photo${photosLocalCount === 1 ? '' : 's'} saved locally instead`;
+  saveFlash.textContent = `✓ ${bcSummary} — ${syncNote}`;
   saveFlash.classList.add('show');
   setTimeout(() => saveFlash.classList.remove('show'), 2500);
 
