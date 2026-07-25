@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>EAK Pricing Round</title>
 <script src="./jsbarcode.min.js"></script>
+<script src="./msal-browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -20,6 +21,21 @@ body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotes
 header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center}
 header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
 header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+#onedrive-bar{
+  max-width:480px;margin:0 auto;padding:10px 5vw;display:flex;align-items:center;
+  justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);
+  background:var(--panel);flex-wrap:wrap;
+}
+#onedrive-status{font-size:.68rem;color:var(--concrete);letter-spacing:.02em}
+#onedrive-status.connected{color:var(--good)}
+#onedrive-status.warn{color:var(--warn)}
+#onedrive-bar button{
+  background:none;border:1px solid var(--gold);color:var(--gold);border-radius:5px;
+  padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+}
+#onedrive-disconnect-btn{border-color:var(--line);color:var(--concrete)}
 
 main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 
@@ -202,6 +218,12 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   <span class="mono">Scan → price it → next</span>
 </header>
 
+<div id="onedrive-bar">
+  <span id="onedrive-status" class="mono">☁ Checking OneDrive…</span>
+  <button id="onedrive-connect-btn" type="button" style="display:none">Connect OneDrive</button>
+  <button id="onedrive-disconnect-btn" type="button" style="display:none">Disconnect</button>
+</div>
+
 <main>
   <div class="note">Pair your Bluetooth scanner AND your Bluetooth label printer in your
   phone's Bluetooth settings first, same as pairing a keyboard. Tap the barcode field and
@@ -331,6 +353,98 @@ let generatedSize = '';
 let generatedBrand = '';
 let itemGenStyle = ''; // remembered Style/Color across generated barcodes for the SAME item,
 let itemGenColor = ''; // so generating size 2/3/4's barcode doesn't need retyping them
+
+// ---- OneDrive sync (Microsoft Graph API) ----
+// One CSV file per browser session, continuously overwritten so it always reflects
+// the full up-to-date session — avoids any row-append complexity.
+const oneDriveSessionId = new Date().toISOString().replace(/[:.]/g, '-');
+const GRAPH_SCOPES = ['Files.ReadWrite', 'offline_access', 'User.Read'];
+const msalConfig = {
+  auth: {
+    clientId: '12101a8e-26f6-4965-85fe-3d762062e8ca',
+    authority: 'https://login.microsoftonline.com/common',
+    redirectUri: 'https://gorillahighdev.github.io/eak-tools/',
+  },
+  cache: { cacheLocation: 'localStorage' }, // survives closing the tab / phone app switches
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+const odStatus = document.getElementById('onedrive-status');
+const odConnectBtn = document.getElementById('onedrive-connect-btn');
+const odDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
+
+function updateOneDriveUI() {
+  const account = msalInstance.getActiveAccount();
+  if (account) {
+    odStatus.textContent = `☁ Syncing to OneDrive — ${account.username}`;
+    odStatus.classList.add('connected');
+    odStatus.classList.remove('warn');
+    odConnectBtn.style.display = 'none';
+    odDisconnectBtn.style.display = 'inline-block';
+  } else {
+    odStatus.textContent = '☁ Not connected — saving to this phone only';
+    odStatus.classList.remove('connected', 'warn');
+    odConnectBtn.style.display = 'inline-block';
+    odDisconnectBtn.style.display = 'none';
+  }
+}
+
+odConnectBtn.addEventListener('click', () => {
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+});
+odDisconnectBtn.addEventListener('click', () => {
+  msalInstance.setActiveAccount(null);
+  updateOneDriveUI();
+});
+
+async function getGraphToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) return null;
+  try {
+    const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return result.accessToken;
+  } catch (err) {
+    // Needs a fresh interactive sign-in (expired/revoked) — send them through it again.
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES });
+    return null;
+  }
+}
+
+function encodeGraphPath(path) {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
+// Returns true/false — never throws, so callers can fall back to local-only saving.
+async function uploadToOneDrive(relativePath, content, contentType) {
+  try {
+    const token = await getGraphToken();
+    if (!token) return false;
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+      body: content,
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('OneDrive upload failed:', relativePath, err);
+    return false;
+  }
+}
+
+(async () => {
+  try {
+    await msalInstance.initialize();
+    await msalInstance.handleRedirectPromise();
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0 && !msalInstance.getActiveAccount()) {
+      msalInstance.setActiveAccount(accounts[0]);
+    }
+  } catch (err) {
+    console.warn('OneDrive sign-in check failed:', err);
+  }
+  updateOneDriveUI();
+})();
 
 const barcodeInput = document.getElementById('barcode-input');
 const barcodeHint = document.getElementById('barcode-hint');
@@ -846,36 +960,66 @@ saveBtn.addEventListener('click', async () => {
   persist();
   refreshUI();
 
+  const onlineSync = !!msalInstance.getActiveAccount();
+  let csvSynced = false;
+  if (onlineSync) {
+    saveBtn.textContent = 'Syncing CSV...';
+    csvSynced = await uploadToOneDrive(
+      `pricing-csv/pricing-session-${oneDriveSessionId}.csv`,
+      buildCSV(),
+      'text/csv'
+    );
+  }
+
   // Photos — one shoot, saved once per barcode scanned above so the sorter
   // and Claude Code pipeline still find a full photo set under every size.
+  // Each photo tries OneDrive first (if connected); anything that fails or
+  // isn't connected falls back to a local download, so nothing is ever lost.
   const uniqueBarcodes = [...new Set(rows.map(r => r.barcode))];
   const totalSteps = uniqueBarcodes.length * attachedFiles.length;
   let step = 0;
+  let photosLocalCount = 0;
   for (const bc of uniqueBarcodes) {
     const startNum = photoCounters[bc] || 0;
     for (let i = 0; i < attachedFiles.length; i++) {
       step++;
-      saveBtn.textContent = `Saving photos ${step}/${totalSteps}...`;
       const file = attachedFiles[i];
       const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
       const filename = `${bc}_${startNum + i + 1}.${ext}`;
-      const url = URL.createObjectURL(file);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      if (step < totalSteps) await delay(400);
+      let synced = false;
+      if (onlineSync) {
+        saveBtn.textContent = `Syncing photo ${step}/${totalSteps}...`;
+        synced = await uploadToOneDrive(`intake/${bc}/photo${startNum + i + 1}.${ext}`, file, file.type || 'image/jpeg');
+      }
+      if (!synced) {
+        photosLocalCount++;
+        saveBtn.textContent = `Saving photo ${step}/${totalSteps}...`;
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        await delay(400);
+      }
     }
     photoCounters[bc] = startNum + attachedFiles.length;
   }
   persistPhotoCounters();
 
   const summary = addedItems.map(i => `${i.size}×${i.qty}`).join(', ');
-  saveFlash.textContent = `✓ ${addedItems.length} size${addedItems.length > 1 ? 's' : ''} logged — $${price} — ${summary} — ${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each`;
+  let syncNote;
+  if (!onlineSync) {
+    syncNote = `${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each, saved to Downloads`;
+  } else if (photosLocalCount === 0 && csvSynced) {
+    syncNote = 'synced to OneDrive ☁';
+  } else {
+    syncNote = `⚠ partial sync — ${photosLocalCount} photo${photosLocalCount === 1 ? '' : 's'} saved locally instead, re-upload manually`;
+  }
+  saveFlash.textContent = `✓ ${addedItems.length} size${addedItems.length > 1 ? 's' : ''} logged — $${price} — ${summary} — ${syncNote}`;
   saveFlash.classList.add('show');
   setTimeout(() => saveFlash.classList.remove('show'), 2500);
 
@@ -898,8 +1042,7 @@ saveBtn.addEventListener('click', async () => {
   barcodeInput.focus();
 });
 
-exportBtn.addEventListener('click', () => {
-  if (sessionItems.length === 0) return;
+function buildCSV() {
   const headers = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes'];
   const lines = [headers.join(',')];
   sessionItems.forEach(item => {
@@ -908,7 +1051,12 @@ exportBtn.addEventListener('click', () => {
       csvEscape(item.qty), csvEscape(item.brand), csvEscape(item.notes),
     ].join(','));
   });
-  const csv = lines.join('\r\n');
+  return lines.join('\r\n');
+}
+
+exportBtn.addEventListener('click', () => {
+  if (sessionItems.length === 0) return;
+  const csv = buildCSV();
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const now = new Date();
