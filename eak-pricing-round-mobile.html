@@ -404,6 +404,10 @@ function updateOneDriveUI() {
     odStatus.classList.remove('warn');
     odConnectBtn.style.display = 'none';
     odDisconnectBtn.style.display = 'inline-block';
+    if (!knownItemsLoaded && !knownItemsLoading) {
+      odStatus.textContent += ' · loading known items...';
+      loadKnownItems().then(() => updateOneDriveUI());
+    }
   } else {
     odStatus.textContent = '☁ Not connected — connect to add items';
     odStatus.classList.remove('connected');
@@ -472,6 +476,89 @@ async function listOneDriveFiles(folderPath) {
     console.warn('OneDrive list failed:', folderPath, err);
     return null;
   }
+}
+
+async function downloadOneDriveFile(relativePath) {
+  const token = await getGraphToken();
+  if (!token) return null;
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch (err) {
+    console.warn('OneDrive download failed:', relativePath, err);
+    return null;
+  }
+}
+
+// ---- Proper CSV parser: handles quoted fields with embedded commas/quotes ----
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else { field += c; }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else { field += c; }
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== '');
+}
+
+// ---- Recognize items already priced elsewhere in the system, so a rescan can
+// pre-fill Price/Brand instead of starting blank. Built once per connection from
+// every pricing session's CSV in OneDrive; today's own saves are checked first
+// via sessionItems, which is always more current than this cache. ----
+let knownItems = {}; // { barcode: { price, brand } }
+let knownItemsLoaded = false;
+let knownItemsLoading = false;
+
+async function loadKnownItems() {
+  if (!msalInstance.getActiveAccount() || knownItemsLoading) return;
+  knownItemsLoading = true;
+  const files = await listOneDriveFiles('pricing-csv');
+  if (!files) { knownItemsLoading = false; return; }
+
+  const csvFiles = files
+    .filter(f => f.name.toLowerCase().endsWith('.csv'))
+    .sort((a, b) => new Date(a.lastModifiedDateTime) - new Date(b.lastModifiedDateTime));
+
+  for (const f of csvFiles) {
+    const text = await downloadOneDriveFile(`pricing-csv/${f.name}`);
+    if (!text) continue;
+    const rows = parseCSV(text);
+    if (rows.length < 2) continue;
+    const header = rows[0].map(h => h.trim().toLowerCase());
+    const idx = { barcode: header.indexOf('barcode'), price: header.indexOf('price'), brand: header.indexOf('brand') };
+    if (idx.barcode === -1 || idx.price === -1) continue;
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const bc = (r[idx.barcode] || '').trim();
+      if (!bc) continue;
+      knownItems[bc] = {
+        price: (r[idx.price] || '').trim(),
+        brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
+      };
+    }
+  }
+  knownItemsLoaded = true;
+  knownItemsLoading = false;
+}
+
+// Checks today's session first (most current), then the OneDrive-wide cache.
+function getKnownItem(barcode) {
+  const fromSession = sessionItems.slice().reverse().find(i => i.barcode === barcode);
+  if (fromSession) return { price: fromSession.price, brand: fromSession.brand };
+  return knownItems[barcode] || null;
 }
 
 (async () => {
@@ -866,13 +953,16 @@ function lockBarcode(val) {
   lockBtn.style.display = 'none';
   entryForm.classList.add('show');
 
-  // Soft warnings — never block, always inform
   const dup = sessionItems.some(item => item.barcode === val);
   const check = checkDigitStatus(val);
+  const known = val !== currentGeneratedSKU ? getKnownItem(val) : null;
+
   barcodeHint.classList.remove('warn');
   if (dup) {
-    barcodeHint.textContent = '⚠ Already logged this session — continue only if intentional.';
+    barcodeHint.textContent = '↺ Already priced this session — pre-filled below, editing the existing entry.';
     barcodeHint.classList.add('warn');
+  } else if (known) {
+    barcodeHint.textContent = `↺ Already in the system at $${known.price}${known.brand ? ' · ' + known.brand : ''} — pre-filled below, edit as needed.`;
   } else if (check === false) {
     barcodeHint.textContent = '⚠ Check digit doesn\u2019t validate — worth a re-scan to be safe.';
     barcodeHint.classList.add('warn');
@@ -884,6 +974,10 @@ function lockBarcode(val) {
   if (val !== currentGeneratedSKU) {
     itemGenStyle = '';
     itemGenColor = '';
+    if (known) {
+      fPrice.value = known.price;
+      fBrand.value = known.brand;
+    }
   }
   resetSizeRows(val);
   resetPhotos();
