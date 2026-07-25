@@ -608,18 +608,30 @@ generateBtn.addEventListener('click', () => {
   itemGenStyle = gStyle.value.trim();
   itemGenColor = gColor.value.trim();
 
-  JsBarcode("#barcode-svg", sku, {
-    format: "CODE128", width: 2, height: 60, displayValue: false, margin: 8,
-  });
+  // The SKU itself is what matters — show it and unlock "Use this barcode"
+  // regardless of whether the visual barcode image below can render. A
+  // dropped connection to the barcode-image library should never block this.
   generatedSkuText.textContent = sku;
   generatedPreview.classList.add('show');
   useGeneratedBtn.style.display = 'block';
+
+  try {
+    JsBarcode("#barcode-svg", sku, {
+      format: "CODE128", width: 2, height: 60, displayValue: false, margin: 8,
+    });
+  } catch (err) {
+    console.warn('Barcode image failed to render (SKU is still valid):', err);
+  }
 });
 
 function printLabel(sku) {
-  JsBarcode("#print-barcode-svg", sku, {
-    format: "CODE128", width: 1.5, height: 40, displayValue: false, margin: 4,
-  });
+  try {
+    JsBarcode("#print-barcode-svg", sku, {
+      format: "CODE128", width: 1.5, height: 40, displayValue: false, margin: 4,
+    });
+  } catch (err) {
+    console.warn('Barcode image failed to render for print (SKU text still prints):', err);
+  }
   document.getElementById('print-sku-text').textContent = sku;
   window.print();
 }
