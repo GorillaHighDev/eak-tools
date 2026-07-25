@@ -584,18 +584,6 @@ sizeRowsContainer.addEventListener('input', (e) => {
     const row = e.target.closest('.size-row');
     validateRowBarcode(row);
     updateSaveState();
-
-    // Same scanner-with-no-terminator safety net as the main field: auto-advance
-    // to Size once the scan pauses, so a missing Enter never dead-ends a row.
-    clearTimeout(e.target._scanTimer);
-    const val = e.target.value.trim();
-    if (val.length >= 6) {
-      e.target._scanTimer = setTimeout(() => {
-        if (e.target.value.trim() === val) {
-          row.querySelector('.row-size').focus();
-        }
-      }, 300);
-    }
     return;
   }
   if (e.target.classList.contains('row-size') || e.target.classList.contains('row-qty')) {
@@ -610,7 +598,6 @@ sizeRowsContainer.addEventListener('keydown', (e) => {
   if (!row) return;
   if (target.classList.contains('row-barcode')) {
     e.preventDefault();
-    clearTimeout(target._scanTimer);
     row.querySelector('.row-size').focus();
   } else if (target.classList.contains('row-size')) {
     e.preventDefault();
@@ -875,10 +862,11 @@ barcodeInput.addEventListener('keydown', (e) => {
   }
 });
 
-// Some scanners are configured with no Enter/Tab terminator — they just dump
-// characters into the field and stop. Auto-lock after a short pause in typing
-// so a scan never dead-ends waiting for a keystroke that isn't coming.
-let scanPauseTimer = null;
+// Your scanner is set to send Enter (CR) after each scan, so that keydown handler
+// above is the reliable path — a focus() call made synchronously inside a trusted
+// keydown is what lets iOS show the keyboard for the next field. A focus() call
+// made later from a timer does NOT reliably do that on iOS, so we no longer use
+// one here. "Lock it in" above stays as the manual fallback for the rare miss.
 barcodeInput.addEventListener('input', () => {
   if (lockedBarcode) {
     lockedBarcode = null;
@@ -891,21 +879,9 @@ barcodeInput.addEventListener('input', () => {
 
   const val = barcodeInput.value.trim();
   lockBtn.style.display = val ? 'block' : 'none';
-
-  clearTimeout(scanPauseTimer);
-  if (val.length >= 6) {
-    scanPauseTimer = setTimeout(() => {
-      // Only auto-lock if the value hasn't changed since the timer was set
-      // and it hasn't already been locked (avoids double-firing).
-      if (barcodeInput.value.trim() === val && !lockedBarcode) {
-        lockBarcode(val);
-      }
-    }, 300);
-  }
 });
 
 lockBtn.addEventListener('click', () => {
-  clearTimeout(scanPauseTimer);
   const val = barcodeInput.value.trim();
   if (!val) return;
   lockBarcode(val);
