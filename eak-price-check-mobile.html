@@ -581,7 +581,7 @@ function renderPhotoThumb(name, url) {
 function nextPhotoNumber() {
   let max = 0;
   currentPhotos.forEach(p => {
-    const m = p.name.match(/^photo(\d+)\./i);
+    const m = p.name.match(/^photo(\d+)/i);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   });
   return max + 1;
@@ -589,6 +589,25 @@ function nextPhotoNumber() {
 
 // Runs in the background — never delays the instant price/audio feedback,
 // which is the whole point of this tool when checking items on the floor.
+// Groups files by their "shot" (photo1.jpg and photo1-nobg.png are the same
+// shot, just two versions) and prefers the -nobg version whenever one exists —
+// falls back to whatever's there otherwise.
+function pickPreferredPhotos(files) {
+  const groups = new Map(); // baseName -> { original, nobg }
+  files.forEach(f => {
+    const m = f.name.match(/^(.*?)(-nobg)?\.[^.]+$/i);
+    const base = m ? m[1] : f.name;
+    const isNobg = !!(m && m[2]);
+    if (!groups.has(base)) groups.set(base, {});
+    const g = groups.get(base);
+    if (isNobg) g.nobg = f; else g.original = f;
+  });
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+    .map(([, g]) => g.nobg || g.original)
+    .filter(Boolean);
+}
+
 async function loadResultPhotos(code) {
   clearResultPhotos();
   currentLookupCode = code;
@@ -599,9 +618,9 @@ async function loadResultPhotos(code) {
   photoActions.style.display = 'flex';
 
   const files = await listOneDriveFiles(`intake/${code}`);
-  const imageFiles = (files || [])
-    .filter(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const allImageFiles = (files || [])
+    .filter(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+  const imageFiles = pickPreferredPhotos(allImageFiles);
 
   currentPhotos = [];
 
@@ -622,7 +641,7 @@ async function nextPhotoNumberFor(barcode) {
   const files = await listOneDriveFiles(`intake/${barcode}`);
   let max = 0;
   (files || []).forEach(f => {
-    const m = f.name.match(/^photo(\d+)\./i);
+    const m = f.name.match(/^photo(\d+)/i);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   });
   return max + 1;
