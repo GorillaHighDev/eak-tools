@@ -491,6 +491,52 @@ async function downloadOneDriveFile(relativePath) {
   }
 }
 
+// Distinguishes "file genuinely doesn't exist yet" (safe to treat as empty)
+// from a real failure (network/auth/etc — must NOT proceed as if empty, since
+// that risks silently wiping out a master file that's actually just
+// unreachable right now).
+async function downloadOneDriveFileWithStatus(relativePath) {
+  const token = await getGraphToken();
+  if (!token) return { status: 'error' };
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) return { status: 'notfound' };
+    if (!res.ok) return { status: 'error' };
+    const text = await res.text();
+    return { status: 'ok', text };
+  } catch (err) {
+    console.warn('OneDrive download failed:', relativePath, err);
+    return { status: 'error' };
+  }
+}
+
+const MASTER_CSV_PATH = 'pricing-csv/pricing-master.csv';
+
+// Downloads the current master CSV, appends this save's new rows, and
+// re-uploads the combined file. Returns false (never touching the master
+// file) if the current content couldn't be safely confirmed — callers must
+// fall back to a session-scoped backup file in that case, never retry this
+// blindly with only today's rows.
+async function appendToMasterCSV(newItems) {
+  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
+  let existingDataRows = [];
+  if (result.status === 'ok') {
+    existingDataRows = parseCSV(result.text).slice(1); // drop header row
+  } else if (result.status === 'notfound') {
+    existingDataRows = []; // first-ever save under this scheme
+  } else {
+    return false;
+  }
+
+  const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes'];
+  const newDataRows = newItems.map(item => [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes]);
+  const allRows = [headerRow, ...existingDataRows, ...newDataRows];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+
+  return await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
+}
+
 async function downloadOneDriveFileBlob(relativePath) {
   const token = await getGraphToken();
   if (!token) return null;
@@ -1181,13 +1227,23 @@ saveBtn.addEventListener('click', async () => {
 
   const onlineSync = !!msalInstance.getActiveAccount();
   let csvSynced = false;
+  let csvFellBack = false;
   if (onlineSync) {
     saveBtn.textContent = 'Syncing CSV...';
-    csvSynced = await uploadToOneDrive(
-      `pricing-csv/pricing-session-${oneDriveSessionId}.csv`,
-      buildCSV(),
-      'text/csv'
-    );
+    csvSynced = await appendToMasterCSV(addedItems);
+    if (!csvSynced) {
+      // Couldn't safely confirm the master file's current contents — never
+      // risk overwriting it blind. Fall back to a session-scoped backup file
+      // instead, same as the original behavior; every reader already scans
+      // all CSVs in this folder, so nothing here goes unseen.
+      saveBtn.textContent = 'Saving backup CSV...';
+      csvSynced = await uploadToOneDrive(
+        `pricing-csv/pricing-fallback-${oneDriveSessionId}.csv`,
+        buildCSV(),
+        'text/csv'
+      );
+      csvFellBack = csvSynced;
+    }
   }
 
   // Photos — one shoot, saved once per barcode scanned above so the sorter
@@ -1233,8 +1289,10 @@ saveBtn.addEventListener('click', async () => {
   let syncNote;
   if (!onlineSync) {
     syncNote = `${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each, saved to Downloads`;
-  } else if (photosLocalCount === 0 && csvSynced) {
+  } else if (photosLocalCount === 0 && csvSynced && !csvFellBack) {
     syncNote = 'synced to OneDrive ☁';
+  } else if (csvFellBack && photosLocalCount === 0) {
+    syncNote = '⚠ saved to a backup CSV — master file was unreachable this time';
   } else {
     syncNote = `⚠ partial sync — ${photosLocalCount} photo${photosLocalCount === 1 ? '' : 's'} saved locally instead, re-upload manually`;
   }
