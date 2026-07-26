@@ -71,8 +71,6 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   padding:18px;margin-bottom:20px}
 #generate-panel.show{display:block}
 #generate-panel .step-label{margin-bottom:14px}
-#sku-length-hint{font-size:.75rem;color:var(--concrete);text-align:center;margin-bottom:10px}
-#sku-length-hint.warn{color:var(--warn);font-weight:700}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field{margin-bottom:14px}
 .field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
@@ -120,8 +118,6 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   border-radius:5px;color:#fff;width:100%;
 }
 .row-generate-fields input:focus{outline:none;border-color:var(--gold)}
-.row-sku-length-hint{font-size:.72rem;color:var(--concrete);margin-bottom:6px}
-.row-sku-length-hint.warn{color:var(--warn);font-weight:700}
 .row-generate-btn{
   width:100%;padding:12px;background:var(--gold);color:var(--ink);border:none;border-radius:5px;
   font-weight:700;font-size:.8rem;cursor:pointer;font-family:inherit;
@@ -270,28 +266,17 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
   <button id="no-barcode-toggle">No barcode on this item? Generate one →</button>
 
   <div id="generate-panel">
-    <div class="step-label">Build a new EAK barcode</div>
+    <div class="step-label">Build a new barcode</div>
     <div class="two-col">
       <div class="field">
         <label>Brand <span class="req">*</span></label>
         <input type="text" id="g-brand">
       </div>
       <div class="field">
-        <label>Style / SKU</label>
-        <input type="text" id="g-style">
-      </div>
-    </div>
-    <div class="two-col">
-      <div class="field">
-        <label>Color</label>
-        <input type="text" id="g-color">
-      </div>
-      <div class="field">
         <label>Size <span class="req">*</span></label>
         <input type="text" id="g-size">
       </div>
     </div>
-    <div id="sku-length-hint" class="mono"></div>
     <button class="btn-secondary" id="generate-btn">Generate barcode</button>
 
     <div id="generated-preview">
@@ -390,8 +375,6 @@ let photoCounters = store.get(PHOTO_COUNTER_KEY) || {}; // { barcode: highestNum
 let attachedFiles = [];
 let generatedSize = '';
 let generatedBrand = '';
-let itemGenStyle = ''; // remembered Style/Color across generated barcodes for the SAME item,
-let itemGenColor = ''; // so generating size 2/3/4's barcode doesn't need retyping them
 
 // ---- OneDrive sync (Microsoft Graph API) ----
 // One CSV file per browser session, continuously overwritten so it always reflects
@@ -556,7 +539,13 @@ async function loadKnownItems() {
   if (!msalInstance.getActiveAccount() || knownItemsLoading) return;
   knownItemsLoading = true;
   const files = await listOneDriveFiles('pricing-csv');
-  if (!files) { knownItemsLoading = false; return; }
+  if (!files) {
+    // Mark as "attempted" even on failure — otherwise a single network hiccup
+    // causes this to retry itself forever every time the status bar refreshes.
+    knownItemsLoaded = true;
+    knownItemsLoading = false;
+    return;
+  }
 
   const csvFiles = files
     .filter(f => f.name.toLowerCase().endsWith('.csv'))
@@ -691,12 +680,7 @@ function createSizeRow() {
     '</div>' +
     '<button type="button" class="row-generate-toggle">No barcode for this size? Generate one →</button>' +
     '<div class="row-generate-panel">' +
-      '<div class="row-generate-fields">' +
-        '<input type="text" class="row-gen-style mono" placeholder="Style / SKU">' +
-        '<input type="text" class="row-gen-color mono" placeholder="Color">' +
-      '</div>' +
-      '<div class="row-sku-length-hint mono"></div>' +
-      '<button type="button" class="row-generate-btn">Generate &amp; print label for this size</button>' +
+      '<button type="button" class="row-generate-btn">Generate a barcode for this size</button>' +
       '<div class="row-generated-sku mono"></div>' +
     '</div>';
   sizeRowsContainer.appendChild(row);
@@ -762,26 +746,6 @@ function getValidSizeRows() {
 }
 
 sizeRowsContainer.addEventListener('input', (e) => {
-  if (e.target.classList.contains('row-gen-style') || e.target.classList.contains('row-gen-color')) {
-    const row = e.target.closest('.size-row');
-    const sizeVal = row.querySelector('.row-size').value.trim();
-    const styleVal = row.querySelector('.row-gen-style').value.trim();
-    const colorVal = row.querySelector('.row-gen-color').value.trim();
-    const raw = buildSKU(fBrand.value, styleVal, colorVal, sizeVal);
-    const hint = row.querySelector('.row-sku-length-hint');
-    if (!raw) {
-      hint.textContent = '';
-      hint.classList.remove('warn');
-    } else if (raw.length > MAX_SKU_LENGTH) {
-      const shortened = autoAbbreviateSKU(fBrand.value, styleVal, colorVal, sizeVal);
-      hint.textContent = `Will auto-shorten to: ${shortened} (${shortened.length}/${MAX_SKU_LENGTH})`;
-      hint.classList.add('warn');
-    } else {
-      hint.textContent = `${raw.length}/${MAX_SKU_LENGTH} characters — safe to scan.`;
-      hint.classList.remove('warn');
-    }
-    return;
-  }
   if (e.target.classList.contains('row-barcode')) {
     const row = e.target.closest('.size-row');
     validateRowBarcode(row);
@@ -917,8 +881,6 @@ async function loadExistingPhotos(barcode) {
 const noBarcodeToggle = document.getElementById('no-barcode-toggle');
 const generatePanel = document.getElementById('generate-panel');
 const gBrand = document.getElementById('g-brand');
-const gStyle = document.getElementById('g-style');
-const gColor = document.getElementById('g-color');
 const gSize = document.getElementById('g-size');
 const generateBtn = document.getElementById('generate-btn');
 const generatedPreview = document.getElementById('generated-preview');
@@ -936,80 +898,47 @@ manualToggle.addEventListener('click', () => {
   manualToggle.style.display = 'none';
 });
 
-function sanitizePart(s) {
-  return (s || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '');
-}
-function buildSKU(brand, style, color, size) {
-  return ['EAK', sanitizePart(brand), sanitizePart(style), sanitizePart(color), sanitizePart(size)]
-    .filter(Boolean).join('-');
-}
-
-// A CODE128 barcode gets physically denser (thinner bars) the more characters it
-// encodes. On a 2" label, 16 characters is the tested ceiling for a reliable scan
-// margin (~9 mil/bar) — past this, real testing showed labels too dense to read.
-const MAX_SKU_LENGTH = 16;
-
-// Auto-shortens Brand/Style/Color (never Size — that's what keeps different sizes
-// of the same item from colliding) one character at a time, always trimming
-// whichever of the three is currently longest, until the SKU fits the safe length.
-function autoAbbreviateSKU(brand, style, color, size) {
-  let b = sanitizePart(brand);
-  let st = sanitizePart(style);
-  let c = sanitizePart(color);
-  const sz = sanitizePart(size);
-
-  const buildNow = () => ['EAK', b, st, c, sz].filter(Boolean).join('-');
-
-  let guard = 0;
-  while (buildNow().length > MAX_SKU_LENGTH && guard < 100) {
-    guard++;
-    const parts = [
-      { val: b, set: v => { b = v; } },
-      { val: st, set: v => { st = v; } },
-      { val: c, set: v => { c = v; } },
-    ].filter(p => p.val.length > 1);
-    if (parts.length === 0) break; // nothing left that can shrink further
-    parts.sort((x, y) => y.val.length - x.val.length);
-    parts[0].set(parts[0].val.slice(0, -1));
+// ---- Generated barcodes: simple, valid, numeric codes ----
+// Numeric digits pack roughly twice as densely into CODE128 as letters do, so a
+// numeric code scans reliably at a much smaller size than a spelled-out SKU ever
+// could. Prefix "2" is GS1's officially reserved range for in-store/private use,
+// so these can never collide with a real manufacturer's UPC. The rest is a
+// timestamp (guaranteed to keep climbing even if Generate is tapped repeatedly
+// in the same millisecond) plus a real UPC-A check digit, so every generated
+// code already validates cleanly through this tool's own barcode check above —
+// no separate "trust this one, it's ours" exemption needed.
+function computeUPCCheckDigit(digits11) {
+  let sum = 0;
+  for (let i = 0; i < 11; i++) {
+    const d = parseInt(digits11[i], 10);
+    sum += (i % 2 === 0) ? d * 3 : d;
   }
-  return buildNow();
+  return (10 - (sum % 10)) % 10;
+}
+
+let lastGeneratedMs = 0;
+function generateSimpleCode() {
+  let ms = Date.now();
+  if (ms <= lastGeneratedMs) ms = lastGeneratedMs + 1;
+  lastGeneratedMs = ms;
+  const tenDigits = String(ms % 10000000000).padStart(10, '0');
+  const body = '2' + tenDigits;
+  return body + computeUPCCheckDigit(body);
 }
 
 let currentGeneratedSKU = null;
-
-const skuLengthHint = document.getElementById('sku-length-hint');
-
-function updateSkuLengthHint() {
-  const raw = buildSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
-  if (!raw) {
-    skuLengthHint.textContent = '';
-    skuLengthHint.classList.remove('warn');
-    return;
-  }
-  if (raw.length > MAX_SKU_LENGTH) {
-    const shortened = autoAbbreviateSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
-    skuLengthHint.textContent = `Will auto-shorten to fit: ${shortened} (${shortened.length}/${MAX_SKU_LENGTH})`;
-    skuLengthHint.classList.add('warn');
-  } else {
-    skuLengthHint.textContent = `${raw.length}/${MAX_SKU_LENGTH} characters — safe to scan.`;
-    skuLengthHint.classList.remove('warn');
-  }
-}
-[gBrand, gStyle, gColor, gSize].forEach(el => el.addEventListener('input', updateSkuLengthHint));
 
 generateBtn.addEventListener('click', () => {
   if (!gBrand.value.trim() || !gSize.value.trim()) {
     alert('Brand and Size are required to generate a barcode.');
     return;
   }
-  const sku = autoAbbreviateSKU(gBrand.value, gStyle.value, gColor.value, gSize.value);
+  const sku = generateSimpleCode();
   currentGeneratedSKU = sku;
   generatedSize = gSize.value.trim();
   generatedBrand = gBrand.value.trim();
-  itemGenStyle = gStyle.value.trim();
-  itemGenColor = gColor.value.trim();
 
-  // The SKU itself is what matters — show it and unlock "Use this barcode"
+  // The code itself is what matters — show it and unlock "Use this barcode"
   // regardless of whether the visual barcode image below can render. A
   // dropped connection to the barcode-image library should never block this.
   generatedSkuText.textContent = sku;
@@ -1021,7 +950,7 @@ generateBtn.addEventListener('click', () => {
       format: "CODE128", width: 2, height: 60, displayValue: false, margin: 8,
     });
   } catch (err) {
-    console.warn('Barcode image failed to render (SKU is still valid):', err);
+    console.warn('Barcode image failed to render (code is still valid):', err);
   }
 });
 
@@ -1054,20 +983,11 @@ useGeneratedBtn.addEventListener('click', () => {
 });
 
 // ---- Generate a barcode for an ADDITIONAL size, right inside its own row ----
-// Reuses the shared Brand field plus whatever Style/Color were last used for
-// this item, so only Size needs entering fresh for each new size.
 sizeRowsContainer.addEventListener('click', (e) => {
   if (e.target.classList.contains('row-generate-toggle')) {
     const row = e.target.closest('.size-row');
     const panel = row.querySelector('.row-generate-panel');
-    const willShow = !panel.classList.contains('show');
-    panel.classList.toggle('show', willShow);
-    if (willShow) {
-      const styleInput = row.querySelector('.row-gen-style');
-      const colorInput = row.querySelector('.row-gen-color');
-      if (!styleInput.value.trim()) styleInput.value = itemGenStyle;
-      if (!colorInput.value.trim()) colorInput.value = itemGenColor;
-    }
+    panel.classList.toggle('show');
     return;
   }
 
@@ -1083,12 +1003,7 @@ sizeRowsContainer.addEventListener('click', (e) => {
       row.querySelector('.row-size').focus();
       return;
     }
-    const styleVal = row.querySelector('.row-gen-style').value.trim();
-    const colorVal = row.querySelector('.row-gen-color').value.trim();
-    const sku = autoAbbreviateSKU(fBrand.value, styleVal, colorVal, sizeVal);
-
-    itemGenStyle = styleVal;
-    itemGenColor = colorVal;
+    const sku = generateSimpleCode();
 
     const barcodeField = row.querySelector('.row-barcode');
     barcodeField.value = sku;
@@ -1135,10 +1050,6 @@ function lockBarcode(val) {
   }
 
   fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
-  if (val !== currentGeneratedSKU) {
-    itemGenStyle = '';
-    itemGenColor = '';
-  }
   resetSizeRows(val);
   let siblingCount = 0;
   if (val !== currentGeneratedSKU && known && known.size) {
@@ -1341,7 +1252,7 @@ saveBtn.addEventListener('click', async () => {
   entryForm.classList.remove('show');
   generatedPreview.classList.remove('show');
   useGeneratedBtn.style.display = 'none';
-  gBrand.value = ''; gStyle.value = ''; gColor.value = ''; gSize.value = '';
+  gBrand.value = ''; gSize.value = '';
   fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
   resetSizeRows();
   resetPhotos();
