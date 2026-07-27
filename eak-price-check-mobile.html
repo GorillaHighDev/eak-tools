@@ -786,7 +786,7 @@ function lookup(code) {
     resultMeta.textContent = [entry.size ? `Size ${entry.size}` : '', entry.brand].filter(Boolean).join(' · ');
     resultStatus.textContent = '';
     resultSub.textContent = '';
-    speak(`$${formatSpokenPrice(entry.price)}${entry.size ? ', size ' + entry.size : ''}`);
+    speak(`${formatSpokenPrice(entry.price)}${entry.size ? ', size ' + entry.size : ''}`);
     scanLog.unshift({ code, found: true, price: entry.price });
     loadResultPhotos(code);
     renderSizesList(code, entry);
