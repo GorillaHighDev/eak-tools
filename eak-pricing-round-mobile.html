@@ -301,6 +301,16 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
       <input type="text" id="f-price" inputmode="decimal" placeholder="0.00" enterkeyhint="next">
     </div>
 
+    <div class="field" style="margin-top:18px">
+      <label>Brand</label>
+      <input type="text" id="f-brand" inputmode="text" enterkeyhint="next">
+    </div>
+
+    <div class="field">
+      <label>Notes</label>
+      <input type="text" id="f-notes" inputmode="text" enterkeyhint="done">
+    </div>
+
     <div class="step-label" style="margin-top:18px">Sizes — scan each one's own barcode <span class="req">*</span></div>
     <div id="size-rows"></div>
     <button type="button" id="add-size-btn">+ Add another size</button>
@@ -319,16 +329,6 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
     <input type="file" id="camera-input" accept="image/*" capture="environment">
     <input type="file" id="library-input" accept="image/*" multiple>
     <div id="thumbs"></div>
-
-    <div class="field" style="margin-top:18px">
-      <label>Brand</label>
-      <input type="text" id="f-brand" inputmode="text" enterkeyhint="next">
-    </div>
-
-    <div class="field">
-      <label>Notes</label>
-      <input type="text" id="f-notes" inputmode="text" enterkeyhint="done">
-    </div>
 
     <div id="save-blocked-hint" style="display:none;color:var(--warn);font-size:.78rem;text-align:center;margin-bottom:10px">
       ⚠ Connect OneDrive above before saving — items can't be added while disconnected.
@@ -692,7 +692,6 @@ const libraryBtn = document.getElementById('library-btn');
 const cameraInput = document.getElementById('camera-input');
 const libraryInput = document.getElementById('library-input');
 const thumbsEl = document.getElementById('thumbs');
-const fieldChain = [fBrand, fNotes];
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
@@ -837,8 +836,7 @@ fPrice.addEventListener('input', updateSaveState);
 fPrice.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
-  if (firstSizeInput) firstSizeInput.focus();
+  fBrand.focus();
 });
 
 // ---- Photos — one shoot covers every size scanned above ----
@@ -1163,17 +1161,19 @@ lockBtn.addEventListener('click', () => {
 });
 
 // ---- Field chaining ----
-fieldChain.forEach((field, i) => {
-  field.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    if (i < fieldChain.length - 1) {
-      fieldChain[i + 1].focus();
-    } else if (!saveBtn.disabled) {
-      saveBtn.click();
-    }
-  });
-  field.addEventListener('input', updateSaveState);
+fBrand.addEventListener('input', updateSaveState);
+fBrand.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  fNotes.focus();
+});
+
+fNotes.addEventListener('input', updateSaveState);
+fNotes.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
+  if (firstSizeInput) firstSizeInput.focus();
 });
 
 function updateSaveState() {
