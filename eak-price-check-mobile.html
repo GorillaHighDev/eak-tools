@@ -113,21 +113,14 @@ input:checked + .slider:before{transform:translateX(20px)}
 .photo-thumb{position:relative;width:84px;height:84px}
 .photo-thumb img{
   width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);
-  background:var(--panel);display:block;
+  background:var(--panel);display:block;cursor:pointer;
 }
-.remove-photo-btn{
-  position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;
-  background:var(--bred);color:#fff;border:2px solid var(--ink);font-size:.8rem;line-height:1;
-  cursor:pointer;padding:0;
+#photo-lightbox{
+  display:none;position:fixed;inset:0;background:rgba(13,13,15,.92);z-index:100;
+  align-items:center;justify-content:center;padding:5vw;
 }
-.remove-photo-btn:disabled{opacity:.5}
-#photo-actions{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap}
-#photo-actions button{
-  background:none;border:1.5px dashed var(--line);color:var(--gold);border-radius:6px;
-  padding:9px 12px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.03em;
-  text-transform:uppercase;cursor:pointer;
-}
-#photo-actions button:disabled{opacity:.4}
+#photo-lightbox.show{display:flex}
+#photo-lightbox img{max-width:100%;max-height:100%;border-radius:8px;object-fit:contain}
 #result-status{font-family:'Anton',sans-serif;font-size:1.5rem;color:var(--bred)}
 #result-sub{margin-top:8px;font-size:.85rem;color:var(--concrete)}
 
@@ -201,14 +194,12 @@ input:checked + .slider:before{transform:translateX(20px)}
     <div id="result-meta"></div>
     <div id="result-photos"></div>
     <div id="result-sizes"></div>
-    <div id="photo-actions" style="display:none">
-      <button id="add-photo-camera-btn" type="button">+ Take Photo</button>
-      <button id="add-photo-library-btn" type="button">+ Choose from Library</button>
-    </div>
-    <input type="file" id="add-photo-camera-input" accept="image/*" capture="environment" style="display:none">
-    <input type="file" id="add-photo-library-input" accept="image/*" multiple style="display:none">
     <div id="result-status"></div>
     <div id="result-sub"></div>
+  </div>
+
+  <div id="photo-lightbox">
+    <img id="lightbox-img" src="" alt="">
   </div>
 
   <div id="log" style="display:none">
@@ -352,19 +343,6 @@ async function uploadToOneDrive(relativePath, content, contentType) {
   }
 }
 
-async function deleteOneDriveFile(relativePath) {
-  const token = await getGraphToken();
-  if (!token) return false;
-  try {
-    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}`;
-    const res = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    return res.ok;
-  } catch (err) {
-    console.warn('OneDrive delete failed:', relativePath, err);
-    return false;
-  }
-}
-
 (async () => {
   try {
     await msalInstance.initialize();
@@ -391,11 +369,8 @@ const resultPrice = document.getElementById('result-price');
 const resultMeta = document.getElementById('result-meta');
 const resultPhotos = document.getElementById('result-photos');
 const resultSizes = document.getElementById('result-sizes');
-const photoActions = document.getElementById('photo-actions');
-const addPhotoCameraBtn = document.getElementById('add-photo-camera-btn');
-const addPhotoLibraryBtn = document.getElementById('add-photo-library-btn');
-const addPhotoCameraInput = document.getElementById('add-photo-camera-input');
-const addPhotoLibraryInput = document.getElementById('add-photo-library-input');
+const photoLightbox = document.getElementById('photo-lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
 const resultStatus = document.getElementById('result-status');
 const resultSub = document.getElementById('result-sub');
 const logEl = document.getElementById('log');
@@ -610,24 +585,19 @@ function renderPhotoThumb(name, url) {
   const img = document.createElement('img');
   img.src = url;
   img.alt = name;
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'remove-photo-btn';
-  btn.textContent = '×';
-  btn.dataset.filename = name;
+  img.addEventListener('click', () => {
+    lightboxImg.src = url;
+    lightboxImg.alt = name;
+    photoLightbox.classList.add('show');
+  });
   wrap.appendChild(img);
-  wrap.appendChild(btn);
   resultPhotos.appendChild(wrap);
 }
 
-function nextPhotoNumber() {
-  let max = 0;
-  currentPhotos.forEach(p => {
-    const m = p.name.match(/^photo(\d+)/i);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  });
-  return max + 1;
-}
+photoLightbox.addEventListener('click', () => {
+  photoLightbox.classList.remove('show');
+  lightboxImg.src = '';
+});
 
 // Runs in the background — never delays the instant price/audio feedback,
 // which is the whole point of this tool when checking items on the floor.
@@ -654,10 +624,8 @@ async function loadResultPhotos(code) {
   clearResultPhotos();
   currentLookupCode = code;
   if (!msalInstance.getActiveAccount()) {
-    photoActions.style.display = 'none';
     return;
   }
-  photoActions.style.display = 'flex';
 
   const files = await listOneDriveFiles(`intake/${code}`);
   const allImageFiles = (files || [])
@@ -688,61 +656,6 @@ async function nextPhotoNumberFor(barcode) {
   });
   return max + 1;
 }
-
-async function addPhotos(fileList) {
-  if (!currentLookupCode) return;
-  if (!msalInstance.getActiveAccount()) {
-    alert('Connect OneDrive first to add photos.');
-    return;
-  }
-  const files = [...fileList].filter(f => f.type.startsWith('image/'));
-  if (files.length === 0) return;
-
-  const startNum = nextPhotoNumber();
-  addPhotoCameraBtn.disabled = true;
-  addPhotoLibraryBtn.disabled = true;
-  const origCameraLabel = addPhotoCameraBtn.textContent;
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const ext = /^(jpg|jpeg|png|webp|heic|heif)$/.test(rawExt) ? rawExt : 'jpg';
-    const filename = `photo${startNum + i}.${ext}`;
-    addPhotoCameraBtn.textContent = `Uploading ${i + 1}/${files.length}...`;
-    await uploadToOneDrive(`intake/${currentLookupCode}/${filename}`, file, file.type || 'image/jpeg');
-  }
-
-  addPhotoCameraBtn.textContent = origCameraLabel;
-  addPhotoCameraBtn.disabled = false;
-  addPhotoLibraryBtn.disabled = false;
-  await loadResultPhotos(currentLookupCode);
-}
-
-addPhotoCameraBtn.addEventListener('click', () => addPhotoCameraInput.click());
-addPhotoLibraryBtn.addEventListener('click', () => addPhotoLibraryInput.click());
-addPhotoCameraInput.addEventListener('change', () => {
-  if (addPhotoCameraInput.files.length) addPhotos(addPhotoCameraInput.files);
-  addPhotoCameraInput.value = '';
-});
-addPhotoLibraryInput.addEventListener('change', () => {
-  if (addPhotoLibraryInput.files.length) addPhotos(addPhotoLibraryInput.files);
-  addPhotoLibraryInput.value = '';
-});
-
-resultPhotos.addEventListener('click', async (e) => {
-  if (!e.target.classList.contains('remove-photo-btn')) return;
-  const filename = e.target.dataset.filename;
-  if (!filename || !currentLookupCode) return;
-  if (!confirm(`Remove ${filename}?`)) return;
-  e.target.disabled = true;
-  const ok = await deleteOneDriveFile(`intake/${currentLookupCode}/${filename}`);
-  if (!ok) {
-    alert('Could not delete that photo — check your connection and try again.');
-    e.target.disabled = false;
-    return;
-  }
-  await loadResultPhotos(currentLookupCode);
-});
 
 // Same style, every size — grouped the same way the pricing tool identifies
 // sibling sizes: matching brand + price + notes together.
@@ -798,7 +711,6 @@ function lookup(code) {
     resultSub.textContent = 'This item hasn\u2019t been priced yet — run it through the Pricing Round tool.';
     speak('Not found in system');
     scanLog.unshift({ code, found: false });
-    photoActions.style.display = 'none';
     currentLookupCode = null;
   }
   scanLog = scanLog.slice(0, 15);
