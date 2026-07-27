@@ -97,6 +97,19 @@ input:checked + .slider:before{transform:translateX(20px)}
 #result-price{font-family:'Anton',sans-serif;font-size:3rem;color:#fff;line-height:1}
 #result-meta{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--concrete)}
 #result-photos{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
+
+#result-sizes{margin-top:16px}
+#result-sizes .sizes-label{
+  font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--concrete);text-align:center;margin-bottom:8px;
+}
+.size-row-display{
+  display:grid;grid-template-columns:1fr auto;gap:10px;padding:7px 4px;
+  font-family:'IBM Plex Mono',monospace;font-size:.82rem;border-bottom:1px solid var(--line);
+}
+.size-row-display.current{color:var(--gold);font-weight:700}
+.size-row-display .qty-val{color:var(--concrete)}
+.size-row-display.current .qty-val{color:var(--gold)}
 .photo-thumb{position:relative;width:84px;height:84px}
 .photo-thumb img{
   width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);
@@ -187,6 +200,7 @@ input:checked + .slider:before{transform:translateX(20px)}
     <div id="result-price"></div>
     <div id="result-meta"></div>
     <div id="result-photos"></div>
+    <div id="result-sizes"></div>
     <div id="photo-actions" style="display:none">
       <button id="add-photo-camera-btn" type="button">+ Take Photo</button>
       <button id="add-photo-library-btn" type="button">+ Choose from Library</button>
@@ -376,6 +390,7 @@ const resultEl = document.getElementById('result');
 const resultPrice = document.getElementById('result-price');
 const resultMeta = document.getElementById('result-meta');
 const resultPhotos = document.getElementById('result-photos');
+const resultSizes = document.getElementById('result-sizes');
 const photoActions = document.getElementById('photo-actions');
 const addPhotoCameraBtn = document.getElementById('add-photo-camera-btn');
 const addPhotoLibraryBtn = document.getElementById('add-photo-library-btn');
@@ -427,6 +442,7 @@ function mergeCSVIntoPriceBook(text) {
   const idx = {
     barcode: header.indexOf('barcode'), size: header.indexOf('size'),
     price: header.indexOf('price'), brand: header.indexOf('brand'),
+    qty: header.indexOf('qty'), notes: header.indexOf('notes'),
   };
   if (idx.barcode === -1 || idx.price === -1) return null;
   let count = 0;
@@ -438,6 +454,8 @@ function mergeCSVIntoPriceBook(text) {
       price: (r[idx.price] || '').trim(),
       size: idx.size > -1 ? (r[idx.size] || '').trim() : '',
       brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
+      qty: idx.qty > -1 ? (r[idx.qty] || '').trim() : '',
+      notes: idx.notes > -1 ? (r[idx.notes] || '').trim() : '',
     };
     count++;
   }
@@ -541,12 +559,36 @@ function formatSpokenPrice(priceStr) {
   return s;
 }
 
+// Voice lists load asynchronously and differ by device — try right away,
+// then again once the browser reports them (most common real-world timing).
+// Match by name since the Web Speech API doesn't expose an actual gender
+// field; falls back to whatever the device's default voice is if none of
+// these are found, so audio never breaks over this.
+const FEMALE_VOICE_HINTS = [
+  'samantha', 'karen', 'victoria', 'susan', 'zira', 'moira', 'tessa',
+  'fiona', 'veena', 'salli', 'joanna', 'kendra', 'kimberly', 'ivy',
+  'allison', 'female',
+];
+let preferredVoice = null;
+function pickFemaleVoice() {
+  if (!('speechSynthesis' in window)) return;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return;
+  const match = voices.find(v => FEMALE_VOICE_HINTS.some(hint => v.name.toLowerCase().includes(hint)));
+  if (match) preferredVoice = match;
+}
+if ('speechSynthesis' in window) {
+  pickFemaleVoice();
+  window.speechSynthesis.onvoiceschanged = pickFemaleVoice;
+}
+
 function speak(text) {
   if (!audioSwitch.checked) return;
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.rate = 1.0;
+  if (preferredVoice) utter.voice = preferredVoice;
   window.speechSynthesis.speak(utter);
 }
 
@@ -702,10 +744,42 @@ resultPhotos.addEventListener('click', async (e) => {
   await loadResultPhotos(currentLookupCode);
 });
 
+// Same style, every size — grouped the same way the pricing tool identifies
+// sibling sizes: matching brand + price + notes together.
+function renderSizesList(matchedCode, entry) {
+  resultSizes.innerHTML = '';
+  const matches = Object.entries(priceBook).filter(([bc, e]) =>
+    (e.brand || '') === (entry.brand || '') &&
+    (e.price || '') === (entry.price || '') &&
+    (e.notes || '') === (entry.notes || '')
+  );
+  if (matches.length <= 1) return; // nothing else to show — just this one size
+
+  matches.sort((a, b) => (a[1].size || '').localeCompare(b[1].size || '', undefined, { numeric: true }));
+
+  const label = document.createElement('div');
+  label.className = 'sizes-label';
+  label.textContent = `Available sizes (${matches.length}):`;
+  resultSizes.appendChild(label);
+
+  matches.forEach(([bc, e]) => {
+    const row = document.createElement('div');
+    row.className = 'size-row-display' + (bc === matchedCode ? ' current' : '');
+    const sizeSpan = document.createElement('span');
+    sizeSpan.textContent = e.size || '(no size)';
+    const qtySpan = document.createElement('span');
+    qtySpan.className = 'qty-val';
+    qtySpan.textContent = `Qty ${e.qty || '0'}`;
+    row.append(sizeSpan, qtySpan);
+    resultSizes.appendChild(row);
+  });
+}
+
 function lookup(code) {
   const entry = priceBook[code];
   resultEl.style.display = 'block';
   clearResultPhotos();
+  resultSizes.innerHTML = '';
   if (entry) {
     resultEl.className = 'found';
     resultPrice.textContent = '$' + parseFloat(entry.price).toFixed(2);
@@ -715,6 +789,7 @@ function lookup(code) {
     speak(`$${formatSpokenPrice(entry.price)}${entry.size ? ', size ' + entry.size : ''}`);
     scanLog.unshift({ code, found: true, price: entry.price });
     loadResultPhotos(code);
+    renderSizesList(code, entry);
   } else {
     resultEl.className = 'notfound';
     resultPrice.textContent = '';
