@@ -603,7 +603,7 @@ async function loadKnownItems() {
     const rows = parseCSV(text);
     if (rows.length < 2) continue;
     const header = rows[0].map(h => h.trim().toLowerCase());
-    const idx = { barcode: header.indexOf('barcode'), price: header.indexOf('price'), brand: header.indexOf('brand'), size: header.indexOf('size'), notes: header.indexOf('notes') };
+    const idx = { barcode: header.indexOf('barcode'), price: header.indexOf('price'), brand: header.indexOf('brand'), size: header.indexOf('size'), notes: header.indexOf('notes'), qty: header.indexOf('qty') };
     if (idx.barcode === -1 || idx.price === -1) continue;
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
@@ -614,6 +614,7 @@ async function loadKnownItems() {
         brand: idx.brand > -1 ? (r[idx.brand] || '').trim() : '',
         size: idx.size > -1 ? (r[idx.size] || '').trim() : '',
         notes: idx.notes > -1 ? (r[idx.notes] || '').trim() : '',
+        qty: idx.qty > -1 ? (r[idx.qty] || '').trim() : '',
       };
     }
   }
@@ -624,7 +625,7 @@ async function loadKnownItems() {
 // Checks today's session first (most current), then the OneDrive-wide cache.
 function getKnownItem(barcode) {
   const fromSession = sessionItems.slice().reverse().find(i => i.barcode === barcode);
-  if (fromSession) return { price: fromSession.price, brand: fromSession.brand, size: fromSession.size, notes: fromSession.notes };
+  if (fromSession) return { price: fromSession.price, brand: fromSession.brand, size: fromSession.size, notes: fromSession.notes, qty: fromSession.qty };
   return knownItems[barcode] || null;
 }
 
@@ -632,7 +633,7 @@ function getKnownItem(barcode) {
 // since that's exactly what's shared across every size row within one Save.
 // Checks today's session first, then falls back to OneDrive history for each barcode.
 function findSiblingSizes(barcode, target) {
-  const siblings = new Map(); // barcode -> size
+  const siblings = new Map(); // barcode -> {size, qty}
   const matches = (brand, price, notes) =>
     (brand || '') === (target.brand || '') &&
     (price || '') === (target.price || '') &&
@@ -640,16 +641,16 @@ function findSiblingSizes(barcode, target) {
 
   sessionItems.forEach(item => {
     if (item.barcode === barcode) return;
-    if (matches(item.brand, item.price, item.notes)) siblings.set(item.barcode, item.size);
+    if (matches(item.brand, item.price, item.notes)) siblings.set(item.barcode, { size: item.size, qty: item.qty });
   });
 
   Object.keys(knownItems).forEach(bc => {
     if (bc === barcode || siblings.has(bc)) return;
     const k = knownItems[bc];
-    if (matches(k.brand, k.price, k.notes)) siblings.set(bc, k.size);
+    if (matches(k.brand, k.price, k.notes)) siblings.set(bc, { size: k.size, qty: k.qty });
   });
 
-  return [...siblings.entries()].map(([bc, size]) => ({ barcode: bc, size }));
+  return [...siblings.entries()].map(([bc, info]) => ({ barcode: bc, size: info.size, qty: info.qty }));
 }
 
 (async () => {
@@ -1100,6 +1101,10 @@ function lockBarcode(val) {
     const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
     if (firstSizeInput) firstSizeInput.value = known.size;
   }
+  if (val !== currentGeneratedSKU && known && known.qty) {
+    const firstQtyInput = sizeRowsContainer.querySelector('.row-qty');
+    if (firstQtyInput) firstQtyInput.value = known.qty;
+  }
   if (val !== currentGeneratedSKU && known) {
     fPrice.value = known.price;
     fBrand.value = known.brand;
@@ -1110,6 +1115,7 @@ function lockBarcode(val) {
       const row = createSizeRow();
       row.querySelector('.row-barcode').value = sib.barcode;
       if (sib.size) row.querySelector('.row-size').value = sib.size;
+      if (sib.qty) row.querySelector('.row-qty').value = sib.qty;
       validateRowBarcode(row);
     });
     siblingCount = siblings.length;
