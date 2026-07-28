@@ -623,6 +623,13 @@ async function loadKnownItems() {
 }
 
 // Checks today's session first (most current), then the OneDrive-wide cache.
+// Distinguishes "no value recorded" from a genuine 0 — plain truthy checks
+// (`if (x.qty)`) treat 0 as empty, which would wrongly skip a real "sold out"
+// quantity and leave a stale default in place.
+function hasValue(v) {
+  return v !== undefined && v !== null && String(v).trim() !== '';
+}
+
 function getKnownItem(barcode) {
   const fromSession = sessionItems.slice().reverse().find(i => i.barcode === barcode);
   if (fromSession) return { price: fromSession.price, brand: fromSession.brand, size: fromSession.size, notes: fromSession.notes, qty: fromSession.qty };
@@ -788,7 +795,7 @@ function getValidSizeRows() {
       const qty = parseInt(row.querySelector('.row-qty').value);
       return { barcode, size, qty };
     })
-    .filter(r => r.barcode !== '' && r.size !== '' && !isNaN(r.qty) && r.qty > 0);
+    .filter(r => r.barcode !== '' && r.size !== '' && !isNaN(r.qty) && r.qty >= 0);
 }
 
 sizeRowsContainer.addEventListener('input', (e) => {
@@ -1101,7 +1108,10 @@ function lockBarcode(val) {
     const firstSizeInput = sizeRowsContainer.querySelector('.row-size');
     if (firstSizeInput) firstSizeInput.value = known.size;
   }
-  if (val !== currentGeneratedSKU && known && known.qty) {
+  // hasValue, not a truthy check — a real quantity of 0 (sold out) must still
+  // prefill; `if (known.qty)` would treat 0 as "nothing recorded" and wrongly
+  // leave the row at its default of 1.
+  if (val !== currentGeneratedSKU && known && hasValue(known.qty)) {
     const firstQtyInput = sizeRowsContainer.querySelector('.row-qty');
     if (firstQtyInput) firstQtyInput.value = known.qty;
   }
@@ -1115,7 +1125,7 @@ function lockBarcode(val) {
       const row = createSizeRow();
       row.querySelector('.row-barcode').value = sib.barcode;
       if (sib.size) row.querySelector('.row-size').value = sib.size;
-      if (sib.qty) row.querySelector('.row-qty').value = sib.qty;
+      if (hasValue(sib.qty)) row.querySelector('.row-qty').value = sib.qty;
       validateRowBarcode(row);
     });
     siblingCount = siblings.length;
