@@ -1131,6 +1131,25 @@ sizeRowsContainer.addEventListener('click', (e) => {
   return;
 });
 
+// getKnownItem checks sessionItems (this session's own local saves) before
+// ever looking at the freshly-reloaded OneDrive cache — so a barcode saved
+// earlier this session must also be updated/removed HERE, or its stale
+// local copy keeps winning no matter what actually happened in OneDrive.
+function syncSessionItemsAfterRemoval(barcode, newNotesOrNull) {
+  let changed = false;
+  sessionItems = sessionItems.filter(item => {
+    if (item.barcode !== barcode) return true;
+    if (newNotesOrNull === null) { changed = true; return false; } // delete
+    item.notes = newNotesOrNull; // separate — update in place
+    changed = true;
+    return true;
+  });
+  if (changed) {
+    persist();
+    refreshUI();
+  }
+}
+
 async function handleRowRemove(row) {
   const barcode = row.querySelector('.row-barcode').value.trim();
   const existing = barcode ? getKnownItem(barcode) : null;
@@ -1165,6 +1184,7 @@ async function handleRowRemove(row) {
 
     if (result.status === 'ok') {
       saveFlash.textContent = `✓ ${barcode} removed from the saved system.`;
+      syncSessionItemsAfterRemoval(barcode, null);
       knownItemsLoaded = false;
       loadKnownItems();
     } else if (result.status === 'notfound') {
@@ -1195,6 +1215,7 @@ async function handleRowRemove(row) {
   const ok = await upsertToMasterCSV([updatedItem]);
   if (ok) {
     appendToAuditCSV([updatedItem]); // best-effort, matches the normal save pattern
+    syncSessionItemsAfterRemoval(barcode, newNote);
     saveFlash.textContent = `✓ ${barcode} separated — note set to "${newNote}".`;
     knownItemsLoaded = false;
     loadKnownItems();
