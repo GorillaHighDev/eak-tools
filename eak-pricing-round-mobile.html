@@ -1127,10 +1127,54 @@ sizeRowsContainer.addEventListener('click', (e) => {
   if (!e.target.classList.contains('row-remove')) return;
   const rows = sizeRowsContainer.querySelectorAll('.size-row');
   if (rows.length <= 1) return;
-  e.target.closest('.size-row').remove();
+  handleRowRemove(e.target.closest('.size-row'));
+  return;
+});
+
+async function handleRowRemove(row) {
+  const barcode = row.querySelector('.row-barcode').value.trim();
+  const existing = barcode ? getKnownItem(barcode) : null;
+
+  if (!existing) {
+    // Never saved anywhere — nothing to reconcile, just drop the row.
+    row.remove();
+    updateRemoveButtonVisibility();
+    updateSaveState();
+    return;
+  }
+
+  const alsoDelete = confirm(
+    `${barcode} already has a saved record (qty ${existing.qty ?? '?'}).\n\n` +
+    `OK — remove it from this entry AND permanently delete the saved record.\n` +
+    `Cancel — just remove it from this entry; the saved record stays untouched and will show up again on a future scan.`
+  );
+
+  row.remove();
   updateRemoveButtonVisibility();
   updateSaveState();
-});
+
+  if (!alsoDelete) return;
+
+  if (!msalInstance.getActiveAccount()) {
+    alert('Connect OneDrive first to remove a saved record.');
+    return;
+  }
+
+  saveFlash.textContent = 'Removing from OneDrive...';
+  saveFlash.classList.add('show');
+  const result = await removeFromMasterCSV({ barcode });
+
+  if (result.status === 'ok') {
+    saveFlash.textContent = `✓ ${barcode} removed from the saved system.`;
+    knownItemsLoaded = false;
+    loadKnownItems();
+  } else if (result.status === 'notfound') {
+    saveFlash.textContent = `${barcode} wasn\u2019t found in the saved file — may already be removed.`;
+  } else {
+    saveFlash.textContent = `⚠ Couldn\u2019t reach OneDrive to remove ${barcode} — try again.`;
+  }
+  setTimeout(() => saveFlash.classList.remove('show'), 3000);
+}
 
 // ---- Scan path ----
 function lockBarcode(val) {
