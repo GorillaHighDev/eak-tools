@@ -512,13 +512,15 @@ async function downloadOneDriveFileWithStatus(relativePath) {
 }
 
 const MASTER_CSV_PATH = 'pricing-csv/pricing-master.csv';
+const AUDIT_CSV_PATH = 'pricing-audit/pricing-audit.csv';
 
-// Downloads the current master CSV, appends this save's new rows, and
-// re-uploads the combined file. Returns false (never touching the master
-// file) if the current content couldn't be safely confirmed — callers must
-// fall back to a session-scoped backup file in that case, never retry this
-// blindly with only today's rows.
-async function appendToMasterCSV(newItems) {
+// Downloads the current master CSV, then UPSERTS this save's rows — each
+// barcode gets exactly one row, replacing whatever was there before (or
+// inserted new if it wasn't). This is the "current state" file: always one
+// row per UPC, nothing else. Returns false (never touching the master file)
+// if the current content couldn't be safely confirmed — callers must fall
+// back to a session-scoped backup file in that case, never retry blind.
+async function upsertToMasterCSV(newItems) {
   const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
   let existingDataRows = [];
   if (result.status === 'ok') {
@@ -530,17 +532,48 @@ async function appendToMasterCSV(newItems) {
   }
 
   const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes'];
-  const newDataRows = newItems.map(item => [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes]);
-  const allRows = [headerRow, ...existingDataRows, ...newDataRows];
+  const rowsByBarcode = new Map();
+  existingDataRows.forEach(row => rowsByBarcode.set(row[0], row));
+  newItems.forEach(item => {
+    rowsByBarcode.set(item.barcode, [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes]);
+  });
+
+  const allRows = [headerRow, ...rowsByBarcode.values()];
   const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
 
   return await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
 }
 
-// Removes the ONE row in the master CSV that exactly matches every field of
-// a deleted session item — never touches any other row, even ones sharing
-// the same barcode from a different, legitimate save. Returns a status
-// object so the caller can show an accurate message rather than assume.
+// The permanent history log — every save, ever, appended forever, one row
+// per save (never upserted, never trimmed). Lives in a separate folder from
+// pricing-csv/ on purpose, so nothing that scans "every CSV in that folder"
+// (Price Check, known-item lookup) has to wade through a growing log it
+// doesn't need — the master file alone already has everything current.
+async function appendToAuditCSV(newItems) {
+  const result = await downloadOneDriveFileWithStatus(AUDIT_CSV_PATH);
+  let existingDataRows = [];
+  if (result.status === 'ok') {
+    existingDataRows = parseCSV(result.text).slice(1);
+  } else if (result.status === 'notfound') {
+    existingDataRows = [];
+  } else {
+    return false;
+  }
+
+  const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes', 'Timestamp'];
+  const timestamp = new Date().toISOString();
+  const newDataRows = newItems.map(item => [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes, timestamp]);
+  const allRows = [headerRow, ...existingDataRows, ...newDataRows];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+
+  return await uploadToOneDrive(AUDIT_CSV_PATH, csvContent, 'text/csv');
+}
+
+// Removes a barcode's row from the master file entirely. Simple now that the
+// master guarantees exactly one row per barcode — no more matching every
+// field to find "the right one" among several. The audit log is deliberately
+// left untouched by deletion — a real history shouldn't forget that
+// something was entered and later corrected.
 async function removeFromMasterCSV(item) {
   const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
   if (result.status === 'notfound') return { status: 'notfound' };
@@ -550,24 +583,10 @@ async function removeFromMasterCSV(item) {
   const header = rows[0];
   const dataRows = rows.slice(1);
 
-  const matchesItem = (row) =>
-    row[0] === item.barcode &&
-    row[1] === item.size &&
-    row[2] === String(item.price) &&
-    row[3] === String(item.qty) &&
-    row[4] === (item.brand || '') &&
-    row[5] === (item.notes || '');
+  const idx = dataRows.findIndex(row => row[0] === item.barcode);
+  if (idx === -1) return { status: 'notfound' };
 
-  // Remove only the LAST matching row — if the exact same values were ever
-  // saved more than once, that's the most likely one to be the one just
-  // deleted locally, and every other row stays untouched either way.
-  let lastMatchIdx = -1;
-  for (let i = dataRows.length - 1; i >= 0; i--) {
-    if (matchesItem(dataRows[i])) { lastMatchIdx = i; break; }
-  }
-  if (lastMatchIdx === -1) return { status: 'notfound' };
-
-  dataRows.splice(lastMatchIdx, 1);
+  dataRows.splice(idx, 1);
   const allRows = [header, ...dataRows];
   const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
 
@@ -1282,9 +1301,10 @@ saveBtn.addEventListener('click', async () => {
   const onlineSync = !!msalInstance.getActiveAccount();
   let csvSynced = false;
   let csvFellBack = false;
+  let auditSynced = false;
   if (onlineSync) {
     saveBtn.textContent = 'Syncing CSV...';
-    csvSynced = await appendToMasterCSV(addedItems);
+    csvSynced = await upsertToMasterCSV(addedItems);
     if (!csvSynced) {
       // Couldn't safely confirm the master file's current contents — never
       // risk overwriting it blind. Fall back to a session-scoped backup file
@@ -1298,6 +1318,10 @@ saveBtn.addEventListener('click', async () => {
       );
       csvFellBack = csvSynced;
     }
+    // Best-effort — the permanent history log. Its failure doesn't block or
+    // fall back like the master file does, since the current state is
+    // already safely saved above either way.
+    auditSynced = await appendToAuditCSV(addedItems);
   }
 
   // Photos — one shoot, saved once per barcode scanned above so the sorter
@@ -1345,6 +1369,7 @@ saveBtn.addEventListener('click', async () => {
     syncNote = `${attachedFiles.length} photo${attachedFiles.length > 1 ? 's' : ''} each, saved to Downloads`;
   } else if (photosLocalCount === 0 && csvSynced && !csvFellBack) {
     syncNote = 'synced to OneDrive ☁';
+    if (!auditSynced) syncNote += ' (history log skipped this time)';
   } else if (csvFellBack && photosLocalCount === 0) {
     syncNote = '⚠ saved to a backup CSV — master file was unreachable this time';
   } else {
