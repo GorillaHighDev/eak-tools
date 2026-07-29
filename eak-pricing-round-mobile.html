@@ -1349,7 +1349,14 @@ saveBtn.addEventListener('click', async () => {
   if (onlineSync) {
     saveBtn.textContent = 'Syncing CSV...';
     csvSynced = await upsertToMasterCSV(addedItems);
-    if (!csvSynced) {
+    if (csvSynced) {
+      // The master file just genuinely changed — refresh the cache now so
+      // this session immediately reflects it. Without this, every normal
+      // save (not just deletes) would leave known items stale until the
+      // page is reloaded, since this cache otherwise only loads once.
+      knownItemsLoaded = false;
+      loadKnownItems();
+    } else {
       // Couldn't safely confirm the master file's current contents — never
       // risk overwriting it blind. Fall back to a session-scoped backup file
       // instead, same as the original behavior; every reader already scans
