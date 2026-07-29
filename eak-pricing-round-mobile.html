@@ -1466,6 +1466,11 @@ async function deleteItem(id) {
 
   if (result.status === 'ok') {
     saveFlash.textContent = '✓ Removed from this list and from the saved file.';
+    // Refresh the known-items cache now, in the background — otherwise this
+    // session keeps showing the barcode as "known" from the stale snapshot
+    // taken when it first connected, since that cache only ever loads once.
+    knownItemsLoaded = false;
+    loadKnownItems();
   } else if (result.status === 'notfound') {
     saveFlash.textContent = 'Removed from this list — no matching saved record was found to remove.';
   } else {
