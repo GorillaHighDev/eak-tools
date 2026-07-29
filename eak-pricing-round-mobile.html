@@ -537,6 +537,44 @@ async function appendToMasterCSV(newItems) {
   return await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
 }
 
+// Removes the ONE row in the master CSV that exactly matches every field of
+// a deleted session item — never touches any other row, even ones sharing
+// the same barcode from a different, legitimate save. Returns a status
+// object so the caller can show an accurate message rather than assume.
+async function removeFromMasterCSV(item) {
+  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
+  if (result.status === 'notfound') return { status: 'notfound' };
+  if (result.status !== 'ok') return { status: 'error' };
+
+  const rows = parseCSV(result.text);
+  const header = rows[0];
+  const dataRows = rows.slice(1);
+
+  const matchesItem = (row) =>
+    row[0] === item.barcode &&
+    row[1] === item.size &&
+    row[2] === String(item.price) &&
+    row[3] === String(item.qty) &&
+    row[4] === (item.brand || '') &&
+    row[5] === (item.notes || '');
+
+  // Remove only the LAST matching row — if the exact same values were ever
+  // saved more than once, that's the most likely one to be the one just
+  // deleted locally, and every other row stays untouched either way.
+  let lastMatchIdx = -1;
+  for (let i = dataRows.length - 1; i >= 0; i--) {
+    if (matchesItem(dataRows[i])) { lastMatchIdx = i; break; }
+  }
+  if (lastMatchIdx === -1) return { status: 'notfound' };
+
+  dataRows.splice(lastMatchIdx, 1);
+  const allRows = [header, ...dataRows];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+
+  const uploaded = await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
+  return { status: uploaded ? 'ok' : 'error' };
+}
+
 async function downloadOneDriveFileBlob(relativePath) {
   const token = await getGraphToken();
   if (!token) return null;
@@ -1406,13 +1444,34 @@ checkPhotosBtn.addEventListener('click', async () => {
   }
 });
 
-function deleteItem(id) {
+async function deleteItem(id) {
   const item = sessionItems.find(i => i.id === id);
   if (!item) return;
   if (!confirm(`Delete ${item.barcode} (size ${item.size}, $${item.price})?`)) return;
+
   sessionItems = sessionItems.filter(i => i.id !== id);
   persist();
   refreshUI();
+
+  if (!msalInstance.getActiveAccount()) {
+    saveFlash.textContent = 'Removed from this list — connect OneDrive to also remove it from the saved file.';
+    saveFlash.classList.add('show');
+    setTimeout(() => saveFlash.classList.remove('show'), 3000);
+    return;
+  }
+
+  saveFlash.textContent = 'Removing from OneDrive...';
+  saveFlash.classList.add('show');
+  const result = await removeFromMasterCSV(item);
+
+  if (result.status === 'ok') {
+    saveFlash.textContent = '✓ Removed from this list and from the saved file.';
+  } else if (result.status === 'notfound') {
+    saveFlash.textContent = 'Removed from this list — no matching saved record was found to remove.';
+  } else {
+    saveFlash.textContent = '⚠ Removed from this list, but couldn\u2019t reach OneDrive to remove the saved record — try again once connected.';
+  }
+  setTimeout(() => saveFlash.classList.remove('show'), 3500);
 }
 
 function refreshUI() {
