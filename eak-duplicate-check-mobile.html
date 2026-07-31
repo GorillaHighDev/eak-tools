@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>EAK Duplicate Check</title>
+<script src="./msal-browser.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0D0D0F; --panel:#17171B; --paper:#F2F0EB; --concrete:#8C897F;
+  --gold:#D9A22E; --bred:#C3251C; --line:rgba(242,240,235,.12); --good:#3FB56F; --warn:#E8A13B;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotesk',sans-serif;
+  -webkit-font-smoothing:antialiased}
+.display{font-family:'Anton',sans-serif;text-transform:uppercase}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+header{padding:18px 5vw 14px;border-bottom:1px solid var(--line);text-align:center;position:relative}
+#home-link{position:absolute;left:5vw;top:18px;color:var(--concrete);
+  font-family:'IBM Plex Mono',monospace;font-size:.72rem;text-decoration:none;letter-spacing:.02em}
+#home-link:active{color:var(--gold)}
+header h1{font-size:1.25rem;color:#fff;margin:0 0 4px}
+header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+
+#onedrive-bar{
+  max-width:520px;margin:0 auto;padding:10px 5vw;display:flex;align-items:center;
+  justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);
+  background:var(--panel);flex-wrap:wrap;
+}
+#onedrive-status{font-size:.68rem;color:var(--concrete);letter-spacing:.02em}
+#onedrive-status.connected{color:var(--good)}
+#onedrive-status.warn{color:var(--warn)}
+#onedrive-bar button{
+  background:none;border:1px solid var(--gold);color:var(--gold);border-radius:5px;
+  padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+}
+#onedrive-disconnect-btn{border-color:var(--line);color:var(--concrete)}
+
+main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
+
+.note{background:var(--panel);border-left:3px solid var(--gold);padding:12px 14px;border-radius:3px;
+  font-size:.8rem;color:var(--concrete);margin-bottom:20px;line-height:1.5}
+
+#scan-btn{
+  display:block;width:100%;padding:16px;background:var(--gold);border:none;color:var(--ink);
+  border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;margin-bottom:20px;
+}
+#scan-btn:disabled{opacity:.5}
+
+#summary{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);
+  text-align:center;margin-bottom:20px;display:none}
+#summary.show{display:block}
+#summary b{color:var(--gold)}
+
+#groups{display:flex;flex-direction:column;gap:16px}
+
+.group-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
+.group-header{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.group-brand{font-family:'Anton',sans-serif;font-size:1.1rem;color:#fff;text-transform:uppercase}
+.group-meta{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--gold);margin-top:2px}
+.group-notes{font-family:'IBM Plex Mono',monospace;font-size:.75rem;color:var(--concrete);margin-top:2px;
+  word-break:break-word}
+.group-count{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--concrete);
+  text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+
+.item-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
+.item-row:last-child{border-bottom:none}
+.item-bc{color:var(--concrete);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item-size{color:#fff}
+.item-qty{color:var(--concrete)}
+.item-fix{
+  background:none;border:1px solid var(--bred);color:var(--bred);border-radius:4px;
+  padding:5px 10px;font-family:inherit;font-size:.68rem;letter-spacing:.03em;text-transform:uppercase;
+  cursor:pointer;white-space:nowrap;
+}
+.item-fix:disabled{opacity:.4}
+
+#empty-state{text-align:center;color:var(--concrete);font-size:.85rem;padding:40px 20px;display:none}
+#empty-state.show{display:block}
+</style>
+</head>
+<body>
+
+<header>
+  <a id="home-link" href="./index.html">← All Tools</a>
+  <h1 class="display">Exclusive Duplicate Check</h1>
+  <span class="mono">Find and fix mismatched siblings</span>
+</header>
+
+<div id="onedrive-bar">
+  <span id="onedrive-status" class="mono">☁ Checking OneDrive…</span>
+  <button id="onedrive-connect-btn" type="button" style="display:none">Connect OneDrive</button>
+  <button id="onedrive-disconnect-btn" type="button" style="display:none">Disconnect</button>
+</div>
+
+<main>
+  <div class="note">Scans your whole price book for barcodes sharing the same Brand + Price + Notes —
+  exactly what the pricing tool treats as "the same style, different size." Most of these are real
+  restocks and sizes. This just surfaces every group so you can catch the rare case where two
+  different items got linked by coincidence.</div>
+
+  <button id="scan-btn" type="button">Scan for possible duplicates</button>
+  <div id="summary" class="mono"></div>
+  <div id="groups"></div>
+  <div id="empty-state">No connection yet, or nothing scanned — tap the button above.</div>
+</main>
+
+<script>
+// ---- OneDrive sync (Microsoft Graph API) — same setup as the other tools ----
+const GRAPH_SCOPES = ['Files.ReadWrite', 'offline_access', 'User.Read'];
+const msalConfig = {
+  auth: {
+    clientId: '12101a8e-26f6-4965-85fe-3d762062e8ca',
+    authority: 'https://login.microsoftonline.com/common',
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: 'localStorage' },
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+const odStatus = document.getElementById('onedrive-status');
+const odConnectBtn = document.getElementById('onedrive-connect-btn');
+const odDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
+const scanBtn = document.getElementById('scan-btn');
+const summaryEl = document.getElementById('summary');
+const groupsEl = document.getElementById('groups');
+const emptyStateEl = document.getElementById('empty-state');
+
+function updateOneDriveUI() {
+  const account = msalInstance.getActiveAccount();
+  if (account) {
+    odStatus.textContent = `☁ Connected — ${account.username}`;
+    odStatus.classList.add('connected');
+    odStatus.classList.remove('warn');
+    odConnectBtn.style.display = 'none';
+    odDisconnectBtn.style.display = 'inline-block';
+  } else {
+    odStatus.textContent = '☁ Not connected — connect to scan';
+    odStatus.classList.remove('connected');
+    odStatus.classList.add('warn');
+    odConnectBtn.style.display = 'inline-block';
+    odDisconnectBtn.style.display = 'none';
+  }
+}
+
+odConnectBtn.addEventListener('click', () => {
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+});
+odDisconnectBtn.addEventListener('click', () => {
+  msalInstance.setActiveAccount(null);
+  updateOneDriveUI();
+});
+
+async function getGraphToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) return null;
+  try {
+    const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return result.accessToken;
+  } catch (err) {
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES });
+    return null;
+  }
+}
+
+function encodeGraphPath(path) {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
+async function downloadOneDriveFileWithStatus(relativePath) {
+  const token = await getGraphToken();
+  if (!token) return { status: 'error' };
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) return { status: 'notfound' };
+    if (!res.ok) return { status: 'error' };
+    const text = await res.text();
+    return { status: 'ok', text };
+  } catch (err) {
+    console.warn('OneDrive download failed:', relativePath, err);
+    return { status: 'error' };
+  }
+}
+
+async function uploadToOneDrive(relativePath, content, contentType) {
+  try {
+    const token = await getGraphToken();
+    if (!token) return false;
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+      body: content,
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('OneDrive upload failed:', relativePath, err);
+    return false;
+  }
+}
+
+(async () => {
+  try {
+    await msalInstance.initialize();
+    await msalInstance.handleRedirectPromise();
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0 && !msalInstance.getActiveAccount()) {
+      msalInstance.setActiveAccount(accounts[0]);
+    }
+  } catch (err) {
+    console.warn('OneDrive sign-in check failed:', err);
+  }
+  updateOneDriveUI();
+})();
+
+// ---- Proper CSV parser: handles quoted fields with embedded commas/quotes ----
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else { field += c; }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else { field += c; }
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== '');
+}
+
+function csvEscape(val) {
+  const s = String(val ?? '');
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+const MASTER_CSV_PATH = 'pricing-csv/pricing-master.csv';
+const AUDIT_CSV_PATH = 'pricing-audit/pricing-audit.csv';
+
+// Same upsert used by the pricing tool — one row per barcode, replacing
+// whatever was there. Reused here (with a single-item array) to write the
+// "NEEDS REVIEW" note when separating a falsely-linked item.
+async function upsertToMasterCSV(newItems) {
+  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
+  let existingDataRows = [];
+  if (result.status === 'ok') {
+    existingDataRows = parseCSV(result.text).slice(1);
+  } else if (result.status === 'notfound') {
+    existingDataRows = [];
+  } else {
+    return false;
+  }
+  const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes'];
+  const rowsByBarcode = new Map();
+  existingDataRows.forEach(row => rowsByBarcode.set(row[0], row));
+  newItems.forEach(item => {
+    rowsByBarcode.set(item.barcode, [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes]);
+  });
+  const allRows = [headerRow, ...rowsByBarcode.values()];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  return await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
+}
+
+// Same removal used by the pricing tool — barcode is enough now that master
+// guarantees one row per barcode.
+async function removeFromMasterCSV(item) {
+  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
+  if (result.status === 'notfound') return { status: 'notfound' };
+  if (result.status !== 'ok') return { status: 'error' };
+  const rows = parseCSV(result.text);
+  const header = rows[0];
+  const dataRows = rows.slice(1);
+  const idx = dataRows.findIndex(row => row[0] === item.barcode);
+  if (idx === -1) return { status: 'notfound' };
+  dataRows.splice(idx, 1);
+  const allRows = [header, ...dataRows];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  const uploaded = await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
+  return { status: uploaded ? 'ok' : 'error' };
+}
+
+async function appendToAuditCSV(newItems) {
+  const result = await downloadOneDriveFileWithStatus(AUDIT_CSV_PATH);
+  let existingDataRows = [];
+  if (result.status === 'ok') {
+    existingDataRows = parseCSV(result.text).slice(1);
+  } else if (result.status === 'notfound') {
+    existingDataRows = [];
+  } else {
+    return false;
+  }
+  const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes', 'Timestamp'];
+  const timestamp = new Date().toISOString();
+  const newDataRows = newItems.map(item => [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes, timestamp]);
+  const allRows = [headerRow, ...existingDataRows, ...newDataRows];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  return await uploadToOneDrive(AUDIT_CSV_PATH, csvContent, 'text/csv');
+}
+
+// Same fraction-aware sort used by Price Check, so sizes read in a sensible order.
+function parseSizeValue(sizeStr) {
+  const s = (sizeStr || '').trim();
+  const m = s.match(/^(\d+)(?:\s+(\d+)\/(\d+))?$/);
+  if (!m) return null;
+  const whole = parseInt(m[1], 10);
+  if (m[2] && m[3]) return whole + parseInt(m[2], 10) / parseInt(m[3], 10);
+  return whole;
+}
+
+let allItems = []; // flat list from the master file, refreshed on each scan
+
+function groupItems(items) {
+  const groups = new Map(); // "brand|price|notes" -> items[]
+  items.forEach(item => {
+    const key = `${item.brand}|${item.price}|${item.notes}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  return [...groups.values()].filter(g => g.length > 1);
+}
+
+function renderGroups() {
+  const groups = groupItems(allItems);
+  groupsEl.innerHTML = '';
+
+  if (groups.length === 0) {
+    emptyStateEl.textContent = allItems.length
+      ? 'No groups with more than one item — nothing to review.'
+      : 'No connection yet, or nothing scanned — tap the button above.';
+    emptyStateEl.classList.add('show');
+    summaryEl.classList.remove('show');
+    return;
+  }
+  emptyStateEl.classList.remove('show');
+
+  const totalItems = groups.reduce((sum, g) => sum + g.length, 0);
+  summaryEl.innerHTML = `<b>${groups.length}</b> group${groups.length === 1 ? '' : 's'} to review — <b>${totalItems}</b> items total`;
+  summaryEl.classList.add('show');
+
+  groups.sort((a, b) => b.length - a.length); // biggest groups first
+
+  groups.forEach(group => {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+
+    const header = document.createElement('div');
+    header.className = 'group-header';
+    const brandEl = document.createElement('div');
+    brandEl.className = 'group-brand';
+    brandEl.textContent = group[0].brand || '(no brand)';
+    const metaEl = document.createElement('div');
+    metaEl.className = 'group-meta';
+    metaEl.textContent = `$${parseFloat(group[0].price || 0).toFixed(2)}`;
+    const notesEl = document.createElement('div');
+    notesEl.className = 'group-notes';
+    notesEl.textContent = group[0].notes ? `Notes: ${group[0].notes}` : '(no notes)';
+    const countEl = document.createElement('div');
+    countEl.className = 'group-count';
+    countEl.textContent = `${group.length} items grouped together`;
+    header.append(brandEl, metaEl, notesEl, countEl);
+    card.appendChild(header);
+
+    const sorted = [...group].sort((a, b) => {
+      const va = parseSizeValue(a.size), vb = parseSizeValue(b.size);
+      if (va !== null && vb !== null) return va - vb;
+      if (va !== null) return -1;
+      if (vb !== null) return 1;
+      return (a.size || '').localeCompare(b.size || '');
+    });
+
+    sorted.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      const bc = document.createElement('span');
+      bc.className = 'item-bc';
+      bc.textContent = item.barcode;
+      const size = document.createElement('span');
+      size.className = 'item-size';
+      size.textContent = item.size || '(no size)';
+      const qty = document.createElement('span');
+      qty.className = 'item-qty';
+      qty.textContent = `Qty ${item.qty || '0'}`;
+      const fixBtn = document.createElement('button');
+      fixBtn.className = 'item-fix';
+      fixBtn.type = 'button';
+      fixBtn.textContent = 'Fix';
+      fixBtn.addEventListener('click', () => handleFix(item, fixBtn, row, card));
+      row.append(bc, size, qty, fixBtn);
+      card.appendChild(row);
+    });
+
+    groupsEl.appendChild(card);
+  });
+}
+
+async function handleFix(item, btn, row, card) {
+  const alsoDelete = confirm(
+    `${item.barcode} (size ${item.size || '?'}, qty ${item.qty || '?'}).\n\n` +
+    `OK — permanently delete this saved record.\n` +
+    `Cancel — keep it, but give it a unique note so it stops being grouped with the others (edit the note anytime — it's flagged "NEEDS REVIEW" so it's easy to find later).`
+  );
+
+  btn.disabled = true;
+  btn.textContent = alsoDelete ? 'Removing...' : 'Separating...';
+
+  let ok = false;
+  if (alsoDelete) {
+    const result = await removeFromMasterCSV({ barcode: item.barcode });
+    ok = result.status === 'ok';
+  } else {
+    const randomSuffix = Math.random().toString(36).slice(2, 8);
+    const newNote = `NEEDS REVIEW-${randomSuffix}`;
+    const updatedItem = { ...item, notes: newNote };
+    ok = await upsertToMasterCSV([updatedItem]);
+    if (ok) appendToAuditCSV([updatedItem]); // best-effort
+  }
+
+  if (!ok) {
+    alert(`Couldn't reach OneDrive to update ${item.barcode} — try again.`);
+    btn.disabled = false;
+    btn.textContent = 'Fix';
+    return;
+  }
+
+  // Remove this item from the in-memory list and re-render — if its group
+  // now has only one item left, it disappears from the review list entirely.
+  allItems = allItems.filter(i => i.barcode !== item.barcode);
+  renderGroups();
+}
+
+scanBtn.addEventListener('click', async () => {
+  if (!msalInstance.getActiveAccount()) {
+    alert('Connect OneDrive first.');
+    return;
+  }
+  scanBtn.disabled = true;
+  scanBtn.textContent = 'Scanning...';
+
+  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
+  if (result.status !== 'ok') {
+    alert('Could not reach the price book — check your connection and try again.');
+    scanBtn.disabled = false;
+    scanBtn.textContent = 'Scan for possible duplicates';
+    return;
+  }
+
+  const rows = parseCSV(result.text);
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const idx = {
+    barcode: header.indexOf('barcode'), size: header.indexOf('size'),
+    price: header.indexOf('price'), qty: header.indexOf('qty'),
+    brand: header.indexOf('brand'), notes: header.indexOf('notes'),
+  };
+
+  allItems = rows.slice(1)
+    .filter(r => r[idx.barcode])
+    .map(r => ({
+      barcode: r[idx.barcode],
+      size: idx.size > -1 ? r[idx.size] : '',
+      price: idx.price > -1 ? r[idx.price] : '',
+      qty: idx.qty > -1 ? r[idx.qty] : '',
+      brand: idx.brand > -1 ? r[idx.brand] : '',
+      notes: idx.notes > -1 ? r[idx.notes] : '',
+    }));
+
+  renderGroups();
+  scanBtn.disabled = false;
+  scanBtn.textContent = 'Scan for possible duplicates';
+});
+</script>
+</body>
+</html>
