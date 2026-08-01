@@ -304,16 +304,16 @@ function parseSizeValue(sizeStr) {
   return whole;
 }
 
-// Strips case, whitespace, and punctuation entirely — "Black/White",
-// "black / white", and "Black-White" all collapse to the same string. This
-// alone catches nearly everything: case, spacing, slash-vs-dash-vs-nothing.
+// Used only for BRAND bucketing — case/spacing/punctuation-insensitive, but
+// no word-awareness needed there since brand names aren't usually multi-word
+// descriptors the way Notes are.
 function normalizeForCompare(str) {
   return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 // Classic edit distance — how many single-character changes turn one string
-// into the other. Used only as a second pass on strings that DIDN'T already
-// normalize identically, to catch genuine small typos ("Blue" vs "Blu").
+// into the other. Used only on a single differing WORD (never a whole
+// notes string), to catch a genuine small typo like "Blue" vs "Blu".
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
   if (m === 0) return n;
@@ -333,13 +333,39 @@ function levenshtein(a, b) {
 
 let allItems = []; // flat list from the master file, refreshed on each scan
 
-// Two variant notes strings are considered "close enough to flag":
-// - identical once normalized (case/spacing/punctuation-only difference) — high confidence
-// - not identical, but within edit distance 2 on the normalized form, and
-//   long enough that a 2-character difference is meaningful, not noise — lower confidence
-function closeness(normA, normB) {
-  if (normA === normB) return 'high';
-  if (normA.length >= 3 && normB.length >= 3 && levenshtein(normA, normB) <= 2) return 'low';
+// Splits Notes into individual words (case/punctuation-insensitive per word),
+// e.g. "Black/White" -> ["black","white"], "LT BLUE" -> ["lt","blue"].
+function tokenize(str) {
+  return (str || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+// Notes are considered close enough to flag ONLY when they have the exact
+// same number of words — "LT BLUE" vs "BLUE" is a different word count, a
+// real color variant, never flagged, not a formatting difference — and at
+// most one word differs between them. That one differing word is:
+// - a pure case/punctuation difference (impossible to see here, since
+//   tokenize already normalizes case — so if every word matches after
+//   tokenizing, the ONLY difference was formatting) -> high confidence
+// - OR a small spelling difference within that one word -> low confidence,
+//   but NEVER if that word contains a digit — "1990" vs "1990R" is a real,
+//   distinct style/model number, not a typo of each other, no matter how
+//   close the edit distance looks.
+function closeness(rawA, rawB) {
+  const wordsA = tokenize(rawA);
+  const wordsB = tokenize(rawB);
+  if (wordsA.length !== wordsB.length) return null;
+  if (wordsA.length === 0) return null;
+
+  let diffCount = 0, diffIdx = -1;
+  for (let i = 0; i < wordsA.length; i++) {
+    if (wordsA[i] !== wordsB[i]) { diffCount++; diffIdx = i; }
+  }
+  if (diffCount === 0) return 'high'; // every word matches — only formatting differed
+  if (diffCount > 1) return null; // more than one word differs — too different to guess
+
+  const wordA = wordsA[diffIdx], wordB = wordsB[diffIdx];
+  if (/\d/.test(wordA) || /\d/.test(wordB)) return null; // never fuzzy-match numeric words
+  if (wordA.length >= 3 && wordB.length >= 3 && levenshtein(wordA, wordB) <= 2) return 'low';
   return null;
 }
 
@@ -367,7 +393,6 @@ function findSuggestedMerges(items) {
     const variants = [...variantMap.keys()];
     if (variants.length < 2) return; // only one spelling here — nothing to merge
 
-    const normalized = variants.map(normalizeForCompare);
     const parent = variants.map((_, i) => i);
     function find(i) { return parent[i] === i ? i : (parent[i] = find(parent[i])); }
     function union(i, j) { parent[find(i)] = find(j); }
@@ -375,7 +400,7 @@ function findSuggestedMerges(items) {
     let bestConfidence = null;
     for (let i = 0; i < variants.length; i++) {
       for (let j = i + 1; j < variants.length; j++) {
-        const c = closeness(normalized[i], normalized[j]);
+        const c = closeness(variants[i], variants[j]);
         if (c) {
           union(i, j);
           if (c === 'high' || bestConfidence === null) bestConfidence = c;
@@ -394,7 +419,7 @@ function findSuggestedMerges(items) {
       if (indices.length < 2) return; // this variant didn't cluster with anything
       const clusterVariants = indices.map(i => ({ notes: variants[i], items: variantMap.get(variants[i]) }));
       const confidence = clusterVariants.some((v, idx) =>
-        clusterVariants.some((w, idx2) => idx !== idx2 && closeness(normalizeForCompare(v.notes), normalizeForCompare(w.notes)) === 'high')
+        clusterVariants.some((w, idx2) => idx !== idx2 && closeness(v.notes, w.notes) === 'high')
       ) ? 'high' : 'low';
       suggestions.push({
         brand: bucketItems[0].brand,
