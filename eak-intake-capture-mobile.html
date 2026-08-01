@@ -482,12 +482,13 @@ function renderGroups() {
 }
 
 async function handleMerge(sugg, chosenVariant, btn) {
+  const chosenNotes = (chosenVariant.notes || '').toUpperCase();
   const otherItems = sugg.variants
     .filter(v => v !== chosenVariant)
     .flatMap(v => v.items);
 
   if (!confirm(
-    `Set Notes to "${chosenVariant.notes || '(blank)'}" for ${otherItems.length} item(s) currently spelled differently?\n\n` +
+    `Set Notes to "${chosenNotes || '(blank)'}" for ${otherItems.length} item(s) currently spelled differently?\n\n` +
     `This updates their saved records directly.`
   )) return;
 
@@ -495,7 +496,7 @@ async function handleMerge(sugg, chosenVariant, btn) {
   allUseBtns.forEach(b => b.disabled = true);
   btn.textContent = 'Merging...';
 
-  const updatedItems = otherItems.map(item => ({ ...item, notes: chosenVariant.notes }));
+  const updatedItems = otherItems.map(item => ({ ...item, notes: chosenNotes }));
   const ok = await upsertToMasterCSV(updatedItems);
 
   if (!ok) {
@@ -510,7 +511,7 @@ async function handleMerge(sugg, chosenVariant, btn) {
   // Update the in-memory items so re-rendering reflects the merge immediately.
   const otherBarcodes = new Set(otherItems.map(i => i.barcode));
   allItems = allItems.map(item =>
-    otherBarcodes.has(item.barcode) ? { ...item, notes: chosenVariant.notes } : item
+    otherBarcodes.has(item.barcode) ? { ...item, notes: chosenNotes } : item
   );
   renderGroups();
 }
