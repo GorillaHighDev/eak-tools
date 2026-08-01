@@ -59,26 +59,26 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 #groups{display:flex;flex-direction:column;gap:16px}
 
 .group-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
-.group-header{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.group-header{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 .group-brand{font-family:'Anton',sans-serif;font-size:1.1rem;color:#fff;text-transform:uppercase}
 .group-meta{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--gold);margin-top:2px}
-.group-notes{font-family:'IBM Plex Mono',monospace;font-size:.75rem;color:var(--concrete);margin-top:2px;
-  word-break:break-word}
-.group-count{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--concrete);
-  text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+.group-confidence{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;
+  text-transform:uppercase;margin-top:6px}
+.group-confidence.high{color:var(--good)}
+.group-confidence.low{color:var(--warn)}
 
-.item-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;
-  padding:8px 0;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
-.item-row:last-child{border-bottom:none}
-.item-bc{color:var(--concrete);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item-size{color:#fff}
-.item-qty{color:var(--concrete)}
-.item-fix{
-  background:none;border:1px solid var(--bred);color:var(--bred);border-radius:4px;
-  padding:5px 10px;font-family:inherit;font-size:.68rem;letter-spacing:.03em;text-transform:uppercase;
-  cursor:pointer;white-space:nowrap;
+.variant-block{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.variant-block:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+.variant-notes{font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:#fff;margin-bottom:6px;
+  word-break:break-word}
+.variant-items{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--concrete);
+  margin-bottom:8px;line-height:1.6}
+.variant-use-btn{
+  background:none;border:1px solid var(--gold);color:var(--gold);border-radius:4px;
+  padding:6px 12px;font-family:inherit;font-size:.68rem;letter-spacing:.03em;text-transform:uppercase;
+  cursor:pointer;
 }
-.item-fix:disabled{opacity:.4}
+.variant-use-btn:disabled{opacity:.4}
 
 #empty-state{text-align:center;color:var(--concrete);font-size:.85rem;padding:40px 20px;display:none}
 #empty-state.show{display:block}
@@ -89,7 +89,7 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 <header>
   <a id="home-link" href="./index.html">← All Tools</a>
   <h1 class="display">Exclusive Duplicate Check</h1>
-  <span class="mono">Find and fix mismatched siblings</span>
+  <span class="mono">Find styles that should be linked but aren't</span>
 </header>
 
 <div id="onedrive-bar">
@@ -99,12 +99,12 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 </div>
 
 <main>
-  <div class="note">Scans your whole price book for barcodes sharing the same Brand + Price + Notes —
-  exactly what the pricing tool treats as "the same style, different size." Most of these are real
-  restocks and sizes. This just surfaces every group so you can catch the rare case where two
-  different items got linked by coincidence.</div>
+  <div class="note">Looks for items with the same Brand and Price whose Notes are close but not
+  identical — a capitalization difference, a stray space, a slash vs. no slash, or a small typo.
+  Those tiny differences stop the pricing tool from recognizing them as the same style. Review each
+  group below and pick the spelling that should apply everywhere.</div>
 
-  <button id="scan-btn" type="button">Scan for possible duplicates</button>
+  <button id="scan-btn" type="button">Scan for missed matches</button>
   <div id="summary" class="mono"></div>
   <div id="groups"></div>
   <div id="empty-state">No connection yet, or nothing scanned — tap the button above.</div>
@@ -276,22 +276,6 @@ async function upsertToMasterCSV(newItems) {
 
 // Same removal used by the pricing tool — barcode is enough now that master
 // guarantees one row per barcode.
-async function removeFromMasterCSV(item) {
-  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
-  if (result.status === 'notfound') return { status: 'notfound' };
-  if (result.status !== 'ok') return { status: 'error' };
-  const rows = parseCSV(result.text);
-  const header = rows[0];
-  const dataRows = rows.slice(1);
-  const idx = dataRows.findIndex(row => row[0] === item.barcode);
-  if (idx === -1) return { status: 'notfound' };
-  dataRows.splice(idx, 1);
-  const allRows = [header, ...dataRows];
-  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
-  const uploaded = await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
-  return { status: uploaded ? 'ok' : 'error' };
-}
-
 async function appendToAuditCSV(newItems) {
   const result = await downloadOneDriveFileWithStatus(AUDIT_CSV_PATH);
   let existingDataRows = [];
@@ -320,25 +304,117 @@ function parseSizeValue(sizeStr) {
   return whole;
 }
 
+// Strips case, whitespace, and punctuation entirely — "Black/White",
+// "black / white", and "Black-White" all collapse to the same string. This
+// alone catches nearly everything: case, spacing, slash-vs-dash-vs-nothing.
+function normalizeForCompare(str) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Classic edit distance — how many single-character changes turn one string
+// into the other. Used only as a second pass on strings that DIDN'T already
+// normalize identically, to catch genuine small typos ("Blue" vs "Blu").
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
 let allItems = []; // flat list from the master file, refreshed on each scan
 
-function groupItems(items) {
-  const groups = new Map(); // "brand|price|notes" -> items[]
+// Two variant notes strings are considered "close enough to flag":
+// - identical once normalized (case/spacing/punctuation-only difference) — high confidence
+// - not identical, but within edit distance 2 on the normalized form, and
+//   long enough that a 2-character difference is meaningful, not noise — lower confidence
+function closeness(normA, normB) {
+  if (normA === normB) return 'high';
+  if (normA.length >= 3 && normB.length >= 3 && levenshtein(normA, normB) <= 2) return 'low';
+  return null;
+}
+
+// Groups by normalized Brand + exact Price, then within each bucket clusters
+// the DISTINCT raw Notes strings that are close to at least one other variant
+// in that bucket (union-find over a "close enough" graph, so three variants
+// that are all pairwise-close end up in one cluster, not split into pairs).
+function findSuggestedMerges(items) {
+  const buckets = new Map(); // "normBrand|price" -> items[]
   items.forEach(item => {
-    const key = `${item.brand}|${item.price}|${item.notes}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(item);
+    const key = `${normalizeForCompare(item.brand)}|${item.price}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(item);
   });
-  return [...groups.values()].filter(g => g.length > 1);
+
+  const suggestions = [];
+
+  buckets.forEach(bucketItems => {
+    const variantMap = new Map(); // raw notes string -> items[]
+    bucketItems.forEach(item => {
+      const raw = item.notes || '';
+      if (!variantMap.has(raw)) variantMap.set(raw, []);
+      variantMap.get(raw).push(item);
+    });
+    const variants = [...variantMap.keys()];
+    if (variants.length < 2) return; // only one spelling here — nothing to merge
+
+    const normalized = variants.map(normalizeForCompare);
+    const parent = variants.map((_, i) => i);
+    function find(i) { return parent[i] === i ? i : (parent[i] = find(parent[i])); }
+    function union(i, j) { parent[find(i)] = find(j); }
+
+    let bestConfidence = null;
+    for (let i = 0; i < variants.length; i++) {
+      for (let j = i + 1; j < variants.length; j++) {
+        const c = closeness(normalized[i], normalized[j]);
+        if (c) {
+          union(i, j);
+          if (c === 'high' || bestConfidence === null) bestConfidence = c;
+        }
+      }
+    }
+
+    const clusters = new Map(); // root -> variant indices[]
+    variants.forEach((_, i) => {
+      const root = find(i);
+      if (!clusters.has(root)) clusters.set(root, []);
+      clusters.get(root).push(i);
+    });
+
+    clusters.forEach(indices => {
+      if (indices.length < 2) return; // this variant didn't cluster with anything
+      const clusterVariants = indices.map(i => ({ notes: variants[i], items: variantMap.get(variants[i]) }));
+      const confidence = clusterVariants.some((v, idx) =>
+        clusterVariants.some((w, idx2) => idx !== idx2 && closeness(normalizeForCompare(v.notes), normalizeForCompare(w.notes)) === 'high')
+      ) ? 'high' : 'low';
+      suggestions.push({
+        brand: bucketItems[0].brand,
+        price: bucketItems[0].price,
+        confidence,
+        variants: clusterVariants,
+      });
+    });
+  });
+
+  return suggestions;
 }
 
 function renderGroups() {
-  const groups = groupItems(allItems);
+  const suggestions = findSuggestedMerges(allItems);
   groupsEl.innerHTML = '';
 
-  if (groups.length === 0) {
+  if (suggestions.length === 0) {
     emptyStateEl.textContent = allItems.length
-      ? 'No groups with more than one item — nothing to review.'
+      ? 'No likely missed matches found.'
       : 'No connection yet, or nothing scanned — tap the button above.';
     emptyStateEl.classList.add('show');
     summaryEl.classList.remove('show');
@@ -346,13 +422,13 @@ function renderGroups() {
   }
   emptyStateEl.classList.remove('show');
 
-  const totalItems = groups.reduce((sum, g) => sum + g.length, 0);
-  summaryEl.innerHTML = `<b>${groups.length}</b> group${groups.length === 1 ? '' : 's'} to review — <b>${totalItems}</b> items total`;
+  const totalItems = suggestions.reduce((sum, s) => sum + s.variants.reduce((n, v) => n + v.items.length, 0), 0);
+  summaryEl.innerHTML = `<b>${suggestions.length}</b> possible missed match${suggestions.length === 1 ? '' : 'es'} — <b>${totalItems}</b> items involved`;
   summaryEl.classList.add('show');
 
-  groups.sort((a, b) => b.length - a.length); // biggest groups first
+  suggestions.sort((a, b) => (a.confidence === b.confidence ? 0 : a.confidence === 'high' ? -1 : 1));
 
-  groups.forEach(group => {
+  suggestions.forEach(sugg => {
     const card = document.createElement('div');
     card.className = 'group-card';
 
@@ -360,84 +436,82 @@ function renderGroups() {
     header.className = 'group-header';
     const brandEl = document.createElement('div');
     brandEl.className = 'group-brand';
-    brandEl.textContent = group[0].brand || '(no brand)';
+    brandEl.textContent = sugg.brand || '(no brand)';
     const metaEl = document.createElement('div');
     metaEl.className = 'group-meta';
-    metaEl.textContent = `$${parseFloat(group[0].price || 0).toFixed(2)}`;
-    const notesEl = document.createElement('div');
-    notesEl.className = 'group-notes';
-    notesEl.textContent = group[0].notes ? `Notes: ${group[0].notes}` : '(no notes)';
-    const countEl = document.createElement('div');
-    countEl.className = 'group-count';
-    countEl.textContent = `${group.length} items grouped together`;
-    header.append(brandEl, metaEl, notesEl, countEl);
+    metaEl.textContent = `$${parseFloat(sugg.price || 0).toFixed(2)}`;
+    const confEl = document.createElement('div');
+    confEl.className = 'group-confidence ' + sugg.confidence;
+    confEl.textContent = sugg.confidence === 'high'
+      ? 'Likely the same — just formatted differently'
+      : 'Possible match — review carefully, could be a real typo or a coincidence';
+    header.append(brandEl, metaEl, confEl);
     card.appendChild(header);
 
-    const sorted = [...group].sort((a, b) => {
-      const va = parseSizeValue(a.size), vb = parseSizeValue(b.size);
-      if (va !== null && vb !== null) return va - vb;
-      if (va !== null) return -1;
-      if (vb !== null) return 1;
-      return (a.size || '').localeCompare(b.size || '');
-    });
+    sugg.variants.forEach(variant => {
+      const block = document.createElement('div');
+      block.className = 'variant-block';
 
-    sorted.forEach(item => {
-      const row = document.createElement('div');
-      row.className = 'item-row';
-      const bc = document.createElement('span');
-      bc.className = 'item-bc';
-      bc.textContent = item.barcode;
-      const size = document.createElement('span');
-      size.className = 'item-size';
-      size.textContent = item.size || '(no size)';
-      const qty = document.createElement('span');
-      qty.className = 'item-qty';
-      qty.textContent = `Qty ${item.qty || '0'}`;
-      const fixBtn = document.createElement('button');
-      fixBtn.className = 'item-fix';
-      fixBtn.type = 'button';
-      fixBtn.textContent = 'Fix';
-      fixBtn.addEventListener('click', () => handleFix(item, fixBtn, row, card));
-      row.append(bc, size, qty, fixBtn);
-      card.appendChild(row);
+      const notesEl = document.createElement('div');
+      notesEl.className = 'variant-notes';
+      notesEl.textContent = `"${variant.notes || '(blank)'}"`;
+
+      const itemsEl = document.createElement('div');
+      itemsEl.className = 'variant-items';
+      const sorted = [...variant.items].sort((a, b) => {
+        const va = parseSizeValue(a.size), vb = parseSizeValue(b.size);
+        if (va !== null && vb !== null) return va - vb;
+        if (va !== null) return -1;
+        if (vb !== null) return 1;
+        return (a.size || '').localeCompare(b.size || '');
+      });
+      itemsEl.innerHTML = sorted.map(i => `${i.barcode} — ${i.size || '(no size)'} — qty ${i.qty || '0'}`).join('<br>');
+
+      const useBtn = document.createElement('button');
+      useBtn.className = 'variant-use-btn';
+      useBtn.type = 'button';
+      useBtn.textContent = 'Use this spelling for all';
+      useBtn.addEventListener('click', () => handleMerge(sugg, variant, useBtn));
+
+      block.append(notesEl, itemsEl, useBtn);
+      card.appendChild(block);
     });
 
     groupsEl.appendChild(card);
   });
 }
 
-async function handleFix(item, btn, row, card) {
-  const alsoDelete = confirm(
-    `${item.barcode} (size ${item.size || '?'}, qty ${item.qty || '?'}).\n\n` +
-    `OK — permanently delete this saved record.\n` +
-    `Cancel — keep it, but give it a unique note so it stops being grouped with the others (edit the note anytime — it's flagged "NEEDS REVIEW" so it's easy to find later).`
-  );
+async function handleMerge(sugg, chosenVariant, btn) {
+  const otherItems = sugg.variants
+    .filter(v => v !== chosenVariant)
+    .flatMap(v => v.items);
 
-  btn.disabled = true;
-  btn.textContent = alsoDelete ? 'Removing...' : 'Separating...';
+  if (!confirm(
+    `Set Notes to "${chosenVariant.notes || '(blank)'}" for ${otherItems.length} item(s) currently spelled differently?\n\n` +
+    `This updates their saved records directly.`
+  )) return;
 
-  let ok = false;
-  if (alsoDelete) {
-    const result = await removeFromMasterCSV({ barcode: item.barcode });
-    ok = result.status === 'ok';
-  } else {
-    const randomSuffix = Math.random().toString(36).slice(2, 8);
-    const newNote = `NEEDS REVIEW-${randomSuffix}`;
-    const updatedItem = { ...item, notes: newNote };
-    ok = await upsertToMasterCSV([updatedItem]);
-    if (ok) appendToAuditCSV([updatedItem]); // best-effort
-  }
+  const allUseBtns = groupsEl.querySelectorAll('.variant-use-btn');
+  allUseBtns.forEach(b => b.disabled = true);
+  btn.textContent = 'Merging...';
+
+  const updatedItems = otherItems.map(item => ({ ...item, notes: chosenVariant.notes }));
+  const ok = await upsertToMasterCSV(updatedItems);
 
   if (!ok) {
-    alert(`Couldn't reach OneDrive to update ${item.barcode} — try again.`);
-    btn.disabled = false;
-    btn.textContent = 'Fix';
+    alert('Couldn\u2019t reach OneDrive — try again.');
+    allUseBtns.forEach(b => b.disabled = false);
+    btn.textContent = 'Use this spelling for all';
     return;
   }
 
-  // Remove this item from the in-memory list and re-render — if its group
-  // now has only one item left, it disappears from the review list entirely.
-  allItems = allItems.filter(i => i.barcode !== item.barcode);
+  appendToAuditCSV(updatedItems); // best-effort
+
+  // Update the in-memory items so re-rendering reflects the merge immediately.
+  const otherBarcodes = new Set(otherItems.map(i => i.barcode));
+  allItems = allItems.map(item =>
+    otherBarcodes.has(item.barcode) ? { ...item, notes: chosenVariant.notes } : item
+  );
   renderGroups();
 }
 
@@ -453,7 +527,7 @@ scanBtn.addEventListener('click', async () => {
   if (result.status !== 'ok') {
     alert('Could not reach the price book — check your connection and try again.');
     scanBtn.disabled = false;
-    scanBtn.textContent = 'Scan for possible duplicates';
+    scanBtn.textContent = 'Scan for missed matches';
     return;
   }
 
@@ -478,7 +552,7 @@ scanBtn.addEventListener('click', async () => {
 
   renderGroups();
   scanBtn.disabled = false;
-  scanBtn.textContent = 'Scan for possible duplicates';
+  scanBtn.textContent = 'Scan for missed matches';
 });
 </script>
 </body>
