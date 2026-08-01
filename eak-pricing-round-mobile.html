@@ -1203,7 +1203,7 @@ async function handleRowRemove(row) {
   saveFlash.textContent = 'Separating from siblings...';
   saveFlash.classList.add('show');
   const randomSuffix = Math.random().toString(36).slice(2, 8);
-  const newNote = `NEEDS REVIEW-${randomSuffix}`;
+  const newNote = `NEEDS REVIEW-${randomSuffix}`.toUpperCase();
   const updatedItem = {
     barcode,
     size: existing.size || '',
@@ -1267,8 +1267,8 @@ function lockBarcode(val) {
   }
   if (val !== currentGeneratedSKU && known) {
     fPrice.value = known.price;
-    fBrand.value = known.brand;
-    fNotes.value = known.notes || '';
+    fBrand.value = (known.brand || '').toUpperCase();
+    fNotes.value = (known.notes || '').toUpperCase();
 
     const siblings = findSiblingSizes(val, known);
     siblings.forEach(sib => {
@@ -1327,14 +1327,24 @@ lockBtn.addEventListener('click', () => {
 });
 
 // ---- Field chaining ----
-fBrand.addEventListener('input', updateSaveState);
+// Brand and Notes auto-uppercase as you type — keeps future entries
+// consistent so a plain case difference never causes a missed sibling match
+// (this is exactly the kind of thing the Duplicate Check tool has to catch
+// after the fact; this stops it from happening in the first place).
+function uppercaseInPlace(el) {
+  const start = el.selectionStart, end = el.selectionEnd;
+  el.value = el.value.toUpperCase();
+  if (start !== null && end !== null) el.setSelectionRange(start, end);
+}
+
+fBrand.addEventListener('input', () => { uppercaseInPlace(fBrand); updateSaveState(); });
 fBrand.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
   fNotes.focus();
 });
 
-fNotes.addEventListener('input', updateSaveState);
+fNotes.addEventListener('input', () => { uppercaseInPlace(fNotes); updateSaveState(); });
 fNotes.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
