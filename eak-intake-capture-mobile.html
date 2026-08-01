@@ -373,20 +373,27 @@ function closeness(rawA, rawB) {
 // the DISTINCT raw Notes strings that are close to at least one other variant
 // in that bucket (union-find over a "close enough" graph, so three variants
 // that are all pairwise-close end up in one cluster, not split into pairs).
-function findSuggestedMerges(items) {
-  const buckets = new Map(); // "normBrand|price" -> items[]
+// mode 'notes': bucket by exact Brand+Price, look for Notes typos.
+// mode 'brand': bucket by exact Notes+Price, look for Brand typos — this is
+// the case the first version of this tool couldn't catch at all, since
+// bucketing by exact Brand meant a Brand typo put two items in separate
+// buckets before any comparison could even happen.
+function findSuggestedMerges(items, mode) {
+  const buckets = new Map();
   items.forEach(item => {
-    const key = `${normalizeForCompare(item.brand)}|${item.price}`;
+    const anchorField = mode === 'notes' ? item.brand : item.notes;
+    const key = `${normalizeForCompare(anchorField)}|${item.price}`;
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(item);
   });
 
+  const compareField = mode === 'notes' ? 'notes' : 'brand';
   const suggestions = [];
 
   buckets.forEach(bucketItems => {
-    const variantMap = new Map(); // raw notes string -> items[]
+    const variantMap = new Map(); // raw value of the compared field -> items[]
     bucketItems.forEach(item => {
-      const raw = item.notes || '';
+      const raw = item[compareField] || '';
       if (!variantMap.has(raw)) variantMap.set(raw, []);
       variantMap.get(raw).push(item);
     });
@@ -397,14 +404,9 @@ function findSuggestedMerges(items) {
     function find(i) { return parent[i] === i ? i : (parent[i] = find(parent[i])); }
     function union(i, j) { parent[find(i)] = find(j); }
 
-    let bestConfidence = null;
     for (let i = 0; i < variants.length; i++) {
       for (let j = i + 1; j < variants.length; j++) {
-        const c = closeness(variants[i], variants[j]);
-        if (c) {
-          union(i, j);
-          if (c === 'high' || bestConfidence === null) bestConfidence = c;
-        }
+        if (closeness(variants[i], variants[j])) union(i, j);
       }
     }
 
@@ -417,12 +419,13 @@ function findSuggestedMerges(items) {
 
     clusters.forEach(indices => {
       if (indices.length < 2) return; // this variant didn't cluster with anything
-      const clusterVariants = indices.map(i => ({ notes: variants[i], items: variantMap.get(variants[i]) }));
+      const clusterVariants = indices.map(i => ({ value: variants[i], items: variantMap.get(variants[i]) }));
       const confidence = clusterVariants.some((v, idx) =>
-        clusterVariants.some((w, idx2) => idx !== idx2 && closeness(v.notes, w.notes) === 'high')
+        clusterVariants.some((w, idx2) => idx !== idx2 && closeness(v.value, w.value) === 'high')
       ) ? 'high' : 'low';
       suggestions.push({
-        brand: bucketItems[0].brand,
+        field: compareField, // 'notes' or 'brand' — which one has the suspected typo
+        anchorLabel: mode === 'notes' ? bucketItems[0].brand : bucketItems[0].notes,
         price: bucketItems[0].price,
         confidence,
         variants: clusterVariants,
@@ -434,7 +437,10 @@ function findSuggestedMerges(items) {
 }
 
 function renderGroups() {
-  const suggestions = findSuggestedMerges(allItems);
+  const suggestions = [
+    ...findSuggestedMerges(allItems, 'notes'),
+    ...findSuggestedMerges(allItems, 'brand'),
+  ];
   groupsEl.innerHTML = '';
 
   if (suggestions.length === 0) {
@@ -461,10 +467,10 @@ function renderGroups() {
     header.className = 'group-header';
     const brandEl = document.createElement('div');
     brandEl.className = 'group-brand';
-    brandEl.textContent = sugg.brand || '(no brand)';
+    brandEl.textContent = sugg.anchorLabel || (sugg.field === 'notes' ? '(no brand)' : '(no notes)');
     const metaEl = document.createElement('div');
     metaEl.className = 'group-meta';
-    metaEl.textContent = `$${parseFloat(sugg.price || 0).toFixed(2)}`;
+    metaEl.textContent = `$${parseFloat(sugg.price || 0).toFixed(2)} — possible ${sugg.field === 'notes' ? 'Notes' : 'Brand'} typo`;
     const confEl = document.createElement('div');
     confEl.className = 'group-confidence ' + sugg.confidence;
     confEl.textContent = sugg.confidence === 'high'
@@ -479,7 +485,7 @@ function renderGroups() {
 
       const notesEl = document.createElement('div');
       notesEl.className = 'variant-notes';
-      notesEl.textContent = `"${variant.notes || '(blank)'}"`;
+      notesEl.textContent = `"${variant.value || '(blank)'}"`;
 
       const itemsEl = document.createElement('div');
       itemsEl.className = 'variant-items';
@@ -507,13 +513,15 @@ function renderGroups() {
 }
 
 async function handleMerge(sugg, chosenVariant, btn) {
-  const chosenNotes = (chosenVariant.notes || '').toUpperCase();
+  const field = sugg.field; // 'notes' or 'brand'
+  const fieldLabel = field === 'notes' ? 'Notes' : 'Brand';
+  const chosenValue = (chosenVariant.value || '').toUpperCase();
   const otherItems = sugg.variants
     .filter(v => v !== chosenVariant)
     .flatMap(v => v.items);
 
   if (!confirm(
-    `Set Notes to "${chosenNotes || '(blank)'}" for ${otherItems.length} item(s) currently spelled differently?\n\n` +
+    `Set ${fieldLabel} to "${chosenValue || '(blank)'}" for ${otherItems.length} item(s) currently spelled differently?\n\n` +
     `This updates their saved records directly.`
   )) return;
 
@@ -521,7 +529,7 @@ async function handleMerge(sugg, chosenVariant, btn) {
   allUseBtns.forEach(b => b.disabled = true);
   btn.textContent = 'Merging...';
 
-  const updatedItems = otherItems.map(item => ({ ...item, notes: chosenNotes }));
+  const updatedItems = otherItems.map(item => ({ ...item, [field]: chosenValue }));
   const ok = await upsertToMasterCSV(updatedItems);
 
   if (!ok) {
@@ -536,7 +544,7 @@ async function handleMerge(sugg, chosenVariant, btn) {
   // Update the in-memory items so re-rendering reflects the merge immediately.
   const otherBarcodes = new Set(otherItems.map(i => i.barcode));
   allItems = allItems.map(item =>
-    otherBarcodes.has(item.barcode) ? { ...item, notes: chosenNotes } : item
+    otherBarcodes.has(item.barcode) ? { ...item, [field]: chosenValue } : item
   );
   renderGroups();
 }
