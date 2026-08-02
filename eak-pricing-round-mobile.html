@@ -1581,16 +1581,32 @@ fNotes.addEventListener('keydown', (e) => {
   if (firstSizeInput) firstSizeInput.focus();
 });
 
+function hasDuplicateBarcodes() {
+  const barcodes = [...sizeRowsContainer.querySelectorAll('.row-barcode')]
+    .map(el => el.value.trim())
+    .filter(Boolean);
+  return new Set(barcodes).size !== barcodes.length;
+}
+
 function updateSaveState() {
   const priceOk = fPrice.value.trim() !== '' && !isNaN(parseFloat(fPrice.value));
   const rowsValid = getValidSizeRows().length > 0;
   const photosOk = attachedFiles.length > 0 || existingPhotosConfirmed;
   const oneDriveOk = !!msalInstance.getActiveAccount();
-  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid && photosOk && oneDriveOk);
+  const noDuplicates = !hasDuplicateBarcodes();
+  saveBtn.disabled = !(lockedBarcode && priceOk && rowsValid && photosOk && oneDriveOk && noDuplicates);
 
   const hint = document.getElementById('save-blocked-hint');
   if (hint) {
-    hint.style.display = (lockedBarcode && !oneDriveOk) ? 'block' : 'none';
+    if (lockedBarcode && !noDuplicates) {
+      hint.textContent = '⚠ Fix the duplicate barcode issue before saving — two sizes can\u2019t share the same barcode.';
+      hint.style.display = 'block';
+    } else if (lockedBarcode && !oneDriveOk) {
+      hint.textContent = '⚠ Connect OneDrive above before saving — items can\u2019t be added while disconnected.';
+      hint.style.display = 'block';
+    } else {
+      hint.style.display = 'none';
+    }
   }
 }
 
