@@ -1134,8 +1134,8 @@ function startFromBrandNotes(brand, notes) {
   entryForm.classList.add('show');
 
   fPrice.value = matches.length > 0 ? matches[0].price : '';
-  fBrand.value = brand;
-  fNotes.value = notes;
+  fBrand.value = (brand || '').toUpperCase();
+  fNotes.value = (notes || '').toUpperCase();
   sizeRowsContainer.innerHTML = '';
   clearExistingPhotos();
   resetPhotos();
@@ -1172,6 +1172,7 @@ const noBarcodeToggle = document.getElementById('no-barcode-toggle');
 const generatePanel = document.getElementById('generate-panel');
 const gBrand = document.getElementById('g-brand');
 const gSize = document.getElementById('g-size');
+gBrand.addEventListener('input', () => uppercaseInPlace(gBrand));
 const generateBtn = document.getElementById('generate-btn');
 const generatedPreview = document.getElementById('generated-preview');
 const generatedSkuText = document.getElementById('generated-sku-text');
