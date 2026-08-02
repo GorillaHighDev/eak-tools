@@ -1694,6 +1694,13 @@ saveBtn.addEventListener('click', async () => {
   useGeneratedBtn.style.display = 'none';
   gBrand.value = ''; gSize.value = '';
   fPrice.value = ''; fBrand.value = ''; fNotes.value = '';
+  startBrandInput.value = '';
+  startNotesInput.value = '';
+  startNotesInput.disabled = true;
+  startNotesInput.placeholder = 'Pick a brand first…';
+  hideSuggestions(startBrandSuggestions);
+  hideSuggestions(startNotesSuggestions);
+  startHint.style.display = 'none';
   resetSizeRows();
   resetPhotos();
   saveBtn.textContent = 'Save & next item';
