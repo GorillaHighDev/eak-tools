@@ -97,6 +97,7 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 .suggestion-item:last-child{border-bottom:none}
 .suggestion-item:active{background:var(--ink)}
 .suggestion-empty{padding:11px 14px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--concrete)}
+.suggestion-create{color:var(--gold);font-weight:600}
 #start-hint{font-size:.78rem;margin:-6px 0 18px;font-family:'IBM Plex Mono',monospace}
 #start-hint.warn{color:var(--warn)}
 #start-hint:not(.warn){color:var(--good)}
@@ -1060,13 +1061,16 @@ function matchesForBrandNotes(brand, notes) {
   return [...map.values()];
 }
 
-function showSuggestions(box, matches, onPick) {
+function showSuggestions(box, matches, typedValue, onPick) {
   box.innerHTML = '';
-  if (matches.length === 0) {
+  const exactMatch = matches.some(m => m.toLowerCase() === typedValue.toLowerCase());
+
+  if (matches.length === 0 && !typedValue) {
     box.innerHTML = '<div class="suggestion-empty">No matches</div>';
     box.classList.add('show');
     return;
   }
+
   matches.slice(0, 8).forEach(m => {
     const item = document.createElement('div');
     item.className = 'suggestion-item';
@@ -1074,6 +1078,18 @@ function showSuggestions(box, matches, onPick) {
     item.addEventListener('click', () => onPick(m));
     box.appendChild(item);
   });
+
+  // Nothing already matches exactly what's typed — offer to proceed with it
+  // as a new entry, since otherwise a genuinely new brand or style has no
+  // way through this flow at all.
+  if (!exactMatch && typedValue) {
+    const createItem = document.createElement('div');
+    createItem.className = 'suggestion-item suggestion-create';
+    createItem.textContent = `+ Use "${typedValue}" (new)`;
+    createItem.addEventListener('click', () => onPick(typedValue));
+    box.appendChild(createItem);
+  }
+
   box.classList.add('show');
 }
 
@@ -1085,10 +1101,10 @@ function hideSuggestions(box) {
 startBrandInput.addEventListener('input', () => {
   startNotesInput.value = '';
   startNotesInput.disabled = true;
-  const q = startBrandInput.value.trim().toLowerCase();
+  const q = startBrandInput.value.trim();
   if (!q) { hideSuggestions(startBrandSuggestions); return; }
-  const matches = uniqueBrandsKnown().filter(b => b.toLowerCase().includes(q)).sort();
-  showSuggestions(startBrandSuggestions, matches, (picked) => {
+  const matches = uniqueBrandsKnown().filter(b => b.toLowerCase().includes(q.toLowerCase())).sort();
+  showSuggestions(startBrandSuggestions, matches, q, (picked) => {
     startBrandInput.value = picked;
     hideSuggestions(startBrandSuggestions);
     startNotesInput.disabled = false;
@@ -1101,11 +1117,11 @@ startBrandInput.addEventListener('input', () => {
 startNotesInput.addEventListener('input', () => {
   const brand = startBrandInput.value.trim();
   if (!brand) { hideSuggestions(startNotesSuggestions); return; }
-  const q = startNotesInput.value.trim().toLowerCase();
-  const options = notesForBrand(brand);
-  const matches = (q ? options.filter(n => n.toLowerCase().includes(q)) : options).sort();
+  const q = startNotesInput.value.trim();
   if (!q) { hideSuggestions(startNotesSuggestions); return; }
-  showSuggestions(startNotesSuggestions, matches, (picked) => {
+  const options = notesForBrand(brand);
+  const matches = options.filter(n => n.toLowerCase().includes(q.toLowerCase())).sort();
+  showSuggestions(startNotesSuggestions, matches, q, (picked) => {
     startNotesInput.value = picked;
     hideSuggestions(startNotesSuggestions);
     startFromBrandNotes(brand, picked);
