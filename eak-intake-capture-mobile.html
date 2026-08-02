@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>EAK Duplicate Check</title>
+<title>EAK Style Lookup</title>
 <script src="./msal-browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -41,55 +41,72 @@ header .mono{font-size:.65rem;letter-spacing:.12em;color:var(--gold);text-transf
 
 main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 
-.note{background:var(--panel);border-left:3px solid var(--gold);padding:12px 14px;border-radius:3px;
-  font-size:.8rem;color:var(--concrete);margin-bottom:20px;line-height:1.5}
-
-#scan-btn{
-  display:block;width:100%;padding:16px;background:var(--gold);border:none;color:var(--ink);
-  border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;font-weight:700;
-  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;margin-bottom:20px;
+.field{position:relative;margin-bottom:18px}
+.field label{
+  display:block;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:6px;
 }
-#scan-btn:disabled{opacity:.5}
-
-#summary{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);
-  text-align:center;margin-bottom:20px;display:none}
-#summary.show{display:block}
-#summary b{color:var(--gold)}
-
-#groups{display:flex;flex-direction:column;gap:16px}
-
-.group-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
-.group-header{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
-.group-brand{font-family:'Anton',sans-serif;font-size:1.1rem;color:#fff;text-transform:uppercase}
-.group-meta{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--gold);margin-top:2px}
-.group-confidence{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;
-  text-transform:uppercase;margin-top:6px}
-.group-confidence.high{color:var(--good)}
-.group-confidence.low{color:var(--warn)}
-
-.variant-block{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
-.variant-block:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
-.variant-notes{font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:#fff;margin-bottom:6px;
-  word-break:break-word}
-.variant-items{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--concrete);
-  margin-bottom:8px;line-height:1.6}
-.variant-use-btn{
-  background:none;border:1px solid var(--gold);color:var(--gold);border-radius:4px;
-  padding:6px 12px;font-family:inherit;font-size:.68rem;letter-spacing:.03em;text-transform:uppercase;
-  cursor:pointer;
+.field input{
+  width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:12px 14px;color:#fff;font-family:'Space Grotesk',sans-serif;font-size:1rem;
 }
-.variant-use-btn:disabled{opacity:.4}
+.field input:disabled{opacity:.4}
+.field input:focus{outline:none;border-color:var(--gold)}
 
-#empty-state{text-align:center;color:var(--concrete);font-size:.85rem;padding:40px 20px;display:none}
-#empty-state.show{display:block}
+.suggestions{
+  position:absolute;top:100%;left:0;right:0;background:var(--panel);
+  border:1px solid var(--gold);border-top:none;border-radius:0 0 6px 6px;
+  max-height:220px;overflow-y:auto;z-index:10;display:none;
+}
+.suggestions.show{display:block}
+.suggestion-item{
+  padding:11px 14px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:#fff;
+  cursor:pointer;border-bottom:1px solid var(--line);
+}
+.suggestion-item:last-child{border-bottom:none}
+.suggestion-item:active{background:var(--ink)}
+.suggestion-empty{padding:11px 14px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--concrete)}
+
+#results{display:none}
+#results.show{display:block}
+.result-header{text-align:center;margin-bottom:16px}
+.result-brand{font-family:'Anton',sans-serif;font-size:1.4rem;color:#fff;text-transform:uppercase}
+.result-notes{font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--gold);margin-top:2px}
+
+#result-photos{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.photo-thumb{width:84px;height:84px}
+.photo-thumb img{
+  width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);
+  background:var(--panel);display:block;cursor:pointer;
+}
+#photos-empty{text-align:center;color:var(--concrete);font-size:.78rem;margin-bottom:20px;
+  font-family:'IBM Plex Mono',monospace}
+
+#size-list{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px}
+.size-row-display > *{
+  padding:8px 4px;font-family:'IBM Plex Mono',monospace;font-size:.82rem;
+  border-bottom:1px solid var(--line);text-align:left;
+}
+.size-row-bc{color:var(--concrete);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34vw}
+.size-row-size{color:#fff}
+.size-row-qty{color:var(--concrete);text-align:right}
+
+#empty-state{text-align:center;color:var(--concrete);font-size:.85rem;padding:40px 20px}
+
+#photo-lightbox{
+  display:none;position:fixed;inset:0;background:rgba(13,13,15,.92);z-index:100;
+  align-items:center;justify-content:center;padding:5vw;
+}
+#photo-lightbox.show{display:flex}
+#photo-lightbox img{max-width:100%;max-height:100%;border-radius:8px;object-fit:contain}
 </style>
 </head>
 <body>
 
 <header>
   <a id="home-link" href="./index.html">← All Tools</a>
-  <h1 class="display">Exclusive Duplicate Check</h1>
-  <span class="mono">Find styles that should be linked but aren't</span>
+  <h1 class="display">Exclusive Style Lookup</h1>
+  <span class="mono">Search by brand + style, get every size</span>
 </header>
 
 <div id="onedrive-bar">
@@ -99,16 +116,34 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 </div>
 
 <main>
-  <div class="note">Looks for items with the same Brand and Price whose Notes are close but not
-  identical — a capitalization difference, a stray space, a slash vs. no slash, or a small typo.
-  Those tiny differences stop the pricing tool from recognizing them as the same style. Review each
-  group below and pick the spelling that should apply everywhere.</div>
+  <div class="field">
+    <label>Brand</label>
+    <input type="text" id="brand-input" autocomplete="off" placeholder="Start typing a brand…">
+    <div class="suggestions" id="brand-suggestions"></div>
+  </div>
 
-  <button id="scan-btn" type="button">Scan for missed matches</button>
-  <div id="summary" class="mono"></div>
-  <div id="groups"></div>
-  <div id="empty-state">No connection yet, or nothing scanned — tap the button above.</div>
+  <div class="field">
+    <label>Style / Notes</label>
+    <input type="text" id="notes-input" autocomplete="off" placeholder="Pick a brand first…" disabled>
+    <div class="suggestions" id="notes-suggestions"></div>
+  </div>
+
+  <div id="results">
+    <div class="result-header">
+      <div class="result-brand" id="result-brand"></div>
+      <div class="result-notes" id="result-notes"></div>
+    </div>
+    <div id="result-photos"></div>
+    <div id="photos-empty" style="display:none">No photos on file for this style yet.</div>
+    <div id="size-list"></div>
+  </div>
+
+  <div id="empty-state">Connect OneDrive, then start typing a brand above.</div>
 </main>
+
+<div id="photo-lightbox">
+  <img id="lightbox-img" src="" alt="">
+</div>
 
 <script>
 // ---- OneDrive sync (Microsoft Graph API) — same setup as the other tools ----
@@ -126,10 +161,19 @@ const msalInstance = new msal.PublicClientApplication(msalConfig);
 const odStatus = document.getElementById('onedrive-status');
 const odConnectBtn = document.getElementById('onedrive-connect-btn');
 const odDisconnectBtn = document.getElementById('onedrive-disconnect-btn');
-const scanBtn = document.getElementById('scan-btn');
-const summaryEl = document.getElementById('summary');
-const groupsEl = document.getElementById('groups');
+const brandInput = document.getElementById('brand-input');
+const notesInput = document.getElementById('notes-input');
+const brandSuggestions = document.getElementById('brand-suggestions');
+const notesSuggestions = document.getElementById('notes-suggestions');
+const resultsEl = document.getElementById('results');
+const resultBrand = document.getElementById('result-brand');
+const resultNotes = document.getElementById('result-notes');
+const resultPhotos = document.getElementById('result-photos');
+const photosEmpty = document.getElementById('photos-empty');
+const sizeListEl = document.getElementById('size-list');
 const emptyStateEl = document.getElementById('empty-state');
+const photoLightbox = document.getElementById('photo-lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
 
 function updateOneDriveUI() {
   const account = msalInstance.getActiveAccount();
@@ -139,8 +183,9 @@ function updateOneDriveUI() {
     odStatus.classList.remove('warn');
     odConnectBtn.style.display = 'none';
     odDisconnectBtn.style.display = 'inline-block';
+    loadAllItems();
   } else {
-    odStatus.textContent = '☁ Not connected — connect to scan';
+    odStatus.textContent = '☁ Not connected — connect to search';
     odStatus.classList.remove('connected');
     odStatus.classList.add('warn');
     odConnectBtn.style.display = 'inline-block';
@@ -188,20 +233,32 @@ async function downloadOneDriveFileWithStatus(relativePath) {
   }
 }
 
-async function uploadToOneDrive(relativePath, content, contentType) {
+async function listOneDriveFiles(folderPath) {
+  const token = await getGraphToken();
+  if (!token) return null;
   try {
-    const token = await getGraphToken();
-    if (!token) return false;
-    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
-    const res = await fetch(url, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
-      body: content,
-    });
-    return res.ok;
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(folderPath)}:/children`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.value || [];
   } catch (err) {
-    console.warn('OneDrive upload failed:', relativePath, err);
-    return false;
+    console.warn('OneDrive list failed:', folderPath, err);
+    return null;
+  }
+}
+
+async function downloadOneDriveFileBlob(relativePath) {
+  const token = await getGraphToken();
+  if (!token) return null;
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/root:/EAK-Sync/${encodeGraphPath(relativePath)}:/content`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    return await res.blob();
+  } catch (err) {
+    console.warn('OneDrive photo download failed:', relativePath, err);
+    return null;
   }
 }
 
@@ -241,330 +298,16 @@ function parseCSV(text) {
   return rows.filter(r => r.length > 1 || r[0] !== '');
 }
 
-function csvEscape(val) {
-  const s = String(val ?? '');
-  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
-}
-
 const MASTER_CSV_PATH = 'pricing-csv/pricing-master.csv';
-const AUDIT_CSV_PATH = 'pricing-audit/pricing-audit.csv';
+let allItems = [];
+let brandsLoaded = false;
 
-// Same upsert used by the pricing tool — one row per barcode, replacing
-// whatever was there. Reused here (with a single-item array) to write the
-// "NEEDS REVIEW" note when separating a falsely-linked item.
-async function upsertToMasterCSV(newItems) {
-  const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
-  let existingDataRows = [];
-  if (result.status === 'ok') {
-    existingDataRows = parseCSV(result.text).slice(1);
-  } else if (result.status === 'notfound') {
-    existingDataRows = [];
-  } else {
-    return false;
-  }
-  const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes'];
-  const rowsByBarcode = new Map();
-  existingDataRows.forEach(row => rowsByBarcode.set(row[0], row));
-  newItems.forEach(item => {
-    rowsByBarcode.set(item.barcode, [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes]);
-  });
-  const allRows = [headerRow, ...rowsByBarcode.values()];
-  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
-  return await uploadToOneDrive(MASTER_CSV_PATH, csvContent, 'text/csv');
-}
-
-// Same removal used by the pricing tool — barcode is enough now that master
-// guarantees one row per barcode.
-async function appendToAuditCSV(newItems) {
-  const result = await downloadOneDriveFileWithStatus(AUDIT_CSV_PATH);
-  let existingDataRows = [];
-  if (result.status === 'ok') {
-    existingDataRows = parseCSV(result.text).slice(1);
-  } else if (result.status === 'notfound') {
-    existingDataRows = [];
-  } else {
-    return false;
-  }
-  const headerRow = ['Barcode', 'Size', 'Price', 'Qty', 'Brand', 'Notes', 'Timestamp'];
-  const timestamp = new Date().toISOString();
-  const newDataRows = newItems.map(item => [item.barcode, item.size, item.price, String(item.qty), item.brand, item.notes, timestamp]);
-  const allRows = [headerRow, ...existingDataRows, ...newDataRows];
-  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
-  return await uploadToOneDrive(AUDIT_CSV_PATH, csvContent, 'text/csv');
-}
-
-// Same fraction-aware sort used by Price Check, so sizes read in a sensible order.
-function parseSizeValue(sizeStr) {
-  const s = (sizeStr || '').trim();
-  const m = s.match(/^(\d+)(?:\s+(\d+)\/(\d+))?$/);
-  if (!m) return null;
-  const whole = parseInt(m[1], 10);
-  if (m[2] && m[3]) return whole + parseInt(m[2], 10) / parseInt(m[3], 10);
-  return whole;
-}
-
-// Used only for BRAND bucketing — case/spacing/punctuation-insensitive, but
-// no word-awareness needed there since brand names aren't usually multi-word
-// descriptors the way Notes are.
-function normalizeForCompare(str) {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-// Classic edit distance — how many single-character changes turn one string
-// into the other. Used only on a single differing WORD (never a whole
-// notes string), to catch a genuine small typo like "Blue" vs "Blu".
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-  return dp[m][n];
-}
-
-let allItems = []; // flat list from the master file, refreshed on each scan
-
-// Splits Notes into individual words (case/punctuation-insensitive per word),
-// e.g. "Black/White" -> ["black","white"], "LT BLUE" -> ["lt","blue"].
-function tokenize(str) {
-  return (str || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-}
-
-// Notes are considered close enough to flag ONLY when they have the exact
-// same number of words — "LT BLUE" vs "BLUE" is a different word count, a
-// real color variant, never flagged, not a formatting difference — and at
-// most one word differs between them. That one differing word is:
-// - a pure case/punctuation difference (impossible to see here, since
-//   tokenize already normalizes case — so if every word matches after
-//   tokenizing, the ONLY difference was formatting) -> high confidence
-// - OR a small spelling difference within that one word -> low confidence,
-//   but NEVER if that word contains a digit — "1990" vs "1990R" is a real,
-//   distinct style/model number, not a typo of each other, no matter how
-//   close the edit distance looks.
-function closeness(rawA, rawB) {
-  const wordsA = tokenize(rawA);
-  const wordsB = tokenize(rawB);
-  if (wordsA.length !== wordsB.length) return null;
-  if (wordsA.length === 0) return null;
-
-  let diffCount = 0, diffIdx = -1;
-  for (let i = 0; i < wordsA.length; i++) {
-    if (wordsA[i] !== wordsB[i]) { diffCount++; diffIdx = i; }
-  }
-  if (diffCount === 0) return 'high'; // every word matches — only formatting differed
-  if (diffCount > 1) return null; // more than one word differs — too different to guess
-
-  const wordA = wordsA[diffIdx], wordB = wordsB[diffIdx];
-  if (/\d/.test(wordA) || /\d/.test(wordB)) return null; // never fuzzy-match numeric words
-  if (wordA.length >= 3 && wordB.length >= 3 && levenshtein(wordA, wordB) <= 2) return 'low';
-  return null;
-}
-
-// Groups by normalized Brand + exact Price, then within each bucket clusters
-// the DISTINCT raw Notes strings that are close to at least one other variant
-// in that bucket (union-find over a "close enough" graph, so three variants
-// that are all pairwise-close end up in one cluster, not split into pairs).
-// mode 'notes': bucket by exact Brand+Price, look for Notes typos.
-// mode 'brand': bucket by exact Notes+Price, look for Brand typos — this is
-// the case the first version of this tool couldn't catch at all, since
-// bucketing by exact Brand meant a Brand typo put two items in separate
-// buckets before any comparison could even happen.
-function findSuggestedMerges(items, mode) {
-  const buckets = new Map();
-  items.forEach(item => {
-    const anchorField = mode === 'notes' ? item.brand : item.notes;
-    const key = `${normalizeForCompare(anchorField)}|${item.price}`;
-    if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key).push(item);
-  });
-
-  const compareField = mode === 'notes' ? 'notes' : 'brand';
-  const suggestions = [];
-
-  buckets.forEach(bucketItems => {
-    const variantMap = new Map(); // raw value of the compared field -> items[]
-    bucketItems.forEach(item => {
-      const raw = item[compareField] || '';
-      if (!variantMap.has(raw)) variantMap.set(raw, []);
-      variantMap.get(raw).push(item);
-    });
-    const variants = [...variantMap.keys()];
-    if (variants.length < 2) return; // only one spelling here — nothing to merge
-
-    const parent = variants.map((_, i) => i);
-    function find(i) { return parent[i] === i ? i : (parent[i] = find(parent[i])); }
-    function union(i, j) { parent[find(i)] = find(j); }
-
-    for (let i = 0; i < variants.length; i++) {
-      for (let j = i + 1; j < variants.length; j++) {
-        if (closeness(variants[i], variants[j])) union(i, j);
-      }
-    }
-
-    const clusters = new Map(); // root -> variant indices[]
-    variants.forEach((_, i) => {
-      const root = find(i);
-      if (!clusters.has(root)) clusters.set(root, []);
-      clusters.get(root).push(i);
-    });
-
-    clusters.forEach(indices => {
-      if (indices.length < 2) return; // this variant didn't cluster with anything
-      const clusterVariants = indices.map(i => ({ value: variants[i], items: variantMap.get(variants[i]) }));
-      const confidence = clusterVariants.some((v, idx) =>
-        clusterVariants.some((w, idx2) => idx !== idx2 && closeness(v.value, w.value) === 'high')
-      ) ? 'high' : 'low';
-      suggestions.push({
-        field: compareField, // 'notes' or 'brand' — which one has the suspected typo
-        anchorLabel: mode === 'notes' ? bucketItems[0].brand : bucketItems[0].notes,
-        price: bucketItems[0].price,
-        confidence,
-        variants: clusterVariants,
-      });
-    });
-  });
-
-  return suggestions;
-}
-
-function renderGroups() {
-  const suggestions = [
-    ...findSuggestedMerges(allItems, 'notes'),
-    ...findSuggestedMerges(allItems, 'brand'),
-  ];
-  groupsEl.innerHTML = '';
-
-  if (suggestions.length === 0) {
-    emptyStateEl.textContent = allItems.length
-      ? 'No likely missed matches found.'
-      : 'No connection yet, or nothing scanned — tap the button above.';
-    emptyStateEl.classList.add('show');
-    summaryEl.classList.remove('show');
-    return;
-  }
-  emptyStateEl.classList.remove('show');
-
-  const totalItems = suggestions.reduce((sum, s) => sum + s.variants.reduce((n, v) => n + v.items.length, 0), 0);
-  summaryEl.innerHTML = `<b>${suggestions.length}</b> possible missed match${suggestions.length === 1 ? '' : 'es'} — <b>${totalItems}</b> items involved`;
-  summaryEl.classList.add('show');
-
-  suggestions.sort((a, b) => (a.confidence === b.confidence ? 0 : a.confidence === 'high' ? -1 : 1));
-
-  suggestions.forEach(sugg => {
-    const card = document.createElement('div');
-    card.className = 'group-card';
-
-    const header = document.createElement('div');
-    header.className = 'group-header';
-    const brandEl = document.createElement('div');
-    brandEl.className = 'group-brand';
-    brandEl.textContent = sugg.anchorLabel || (sugg.field === 'notes' ? '(no brand)' : '(no notes)');
-    const metaEl = document.createElement('div');
-    metaEl.className = 'group-meta';
-    metaEl.textContent = `$${parseFloat(sugg.price || 0).toFixed(2)} — possible ${sugg.field === 'notes' ? 'Notes' : 'Brand'} typo`;
-    const confEl = document.createElement('div');
-    confEl.className = 'group-confidence ' + sugg.confidence;
-    confEl.textContent = sugg.confidence === 'high'
-      ? 'Likely the same — just formatted differently'
-      : 'Possible match — review carefully, could be a real typo or a coincidence';
-    header.append(brandEl, metaEl, confEl);
-    card.appendChild(header);
-
-    sugg.variants.forEach(variant => {
-      const block = document.createElement('div');
-      block.className = 'variant-block';
-
-      const notesEl = document.createElement('div');
-      notesEl.className = 'variant-notes';
-      notesEl.textContent = `"${variant.value || '(blank)'}"`;
-
-      const itemsEl = document.createElement('div');
-      itemsEl.className = 'variant-items';
-      const sorted = [...variant.items].sort((a, b) => {
-        const va = parseSizeValue(a.size), vb = parseSizeValue(b.size);
-        if (va !== null && vb !== null) return va - vb;
-        if (va !== null) return -1;
-        if (vb !== null) return 1;
-        return (a.size || '').localeCompare(b.size || '');
-      });
-      itemsEl.innerHTML = sorted.map(i => `${i.barcode} — ${i.size || '(no size)'} — qty ${i.qty || '0'}`).join('<br>');
-
-      const useBtn = document.createElement('button');
-      useBtn.className = 'variant-use-btn';
-      useBtn.type = 'button';
-      useBtn.textContent = 'Use this spelling for all';
-      useBtn.addEventListener('click', () => handleMerge(sugg, variant, useBtn));
-
-      block.append(notesEl, itemsEl, useBtn);
-      card.appendChild(block);
-    });
-
-    groupsEl.appendChild(card);
-  });
-}
-
-async function handleMerge(sugg, chosenVariant, btn) {
-  const field = sugg.field; // 'notes' or 'brand'
-  const fieldLabel = field === 'notes' ? 'Notes' : 'Brand';
-  const chosenValue = (chosenVariant.value || '').toUpperCase();
-  const otherItems = sugg.variants
-    .filter(v => v !== chosenVariant)
-    .flatMap(v => v.items);
-
-  if (!confirm(
-    `Set ${fieldLabel} to "${chosenValue || '(blank)'}" for ${otherItems.length} item(s) currently spelled differently?\n\n` +
-    `This updates their saved records directly.`
-  )) return;
-
-  const allUseBtns = groupsEl.querySelectorAll('.variant-use-btn');
-  allUseBtns.forEach(b => b.disabled = true);
-  btn.textContent = 'Merging...';
-
-  const updatedItems = otherItems.map(item => ({ ...item, [field]: chosenValue }));
-  const ok = await upsertToMasterCSV(updatedItems);
-
-  if (!ok) {
-    alert('Couldn\u2019t reach OneDrive — try again.');
-    allUseBtns.forEach(b => b.disabled = false);
-    btn.textContent = 'Use this spelling for all';
-    return;
-  }
-
-  appendToAuditCSV(updatedItems); // best-effort
-
-  // Update the in-memory items so re-rendering reflects the merge immediately.
-  const otherBarcodes = new Set(otherItems.map(i => i.barcode));
-  allItems = allItems.map(item =>
-    otherBarcodes.has(item.barcode) ? { ...item, [field]: chosenValue } : item
-  );
-  renderGroups();
-}
-
-scanBtn.addEventListener('click', async () => {
-  if (!msalInstance.getActiveAccount()) {
-    alert('Connect OneDrive first.');
-    return;
-  }
-  scanBtn.disabled = true;
-  scanBtn.textContent = 'Scanning...';
-
+async function loadAllItems() {
   const result = await downloadOneDriveFileWithStatus(MASTER_CSV_PATH);
   if (result.status !== 'ok') {
-    alert('Could not reach the price book — check your connection and try again.');
-    scanBtn.disabled = false;
-    scanBtn.textContent = 'Scan for missed matches';
+    emptyStateEl.textContent = 'Could not reach the price book — check your connection.';
     return;
   }
-
   const rows = parseCSV(result.text);
   const header = rows[0].map(h => h.trim().toLowerCase());
   const idx = {
@@ -572,7 +315,6 @@ scanBtn.addEventListener('click', async () => {
     price: header.indexOf('price'), qty: header.indexOf('qty'),
     brand: header.indexOf('brand'), notes: header.indexOf('notes'),
   };
-
   allItems = rows.slice(1)
     .filter(r => r[idx.barcode])
     .map(r => ({
@@ -583,11 +325,182 @@ scanBtn.addEventListener('click', async () => {
       brand: idx.brand > -1 ? r[idx.brand] : '',
       notes: idx.notes > -1 ? r[idx.notes] : '',
     }));
+  brandsLoaded = true;
+  emptyStateEl.textContent = 'Start typing a brand above.';
+}
 
-  renderGroups();
-  scanBtn.disabled = false;
-  scanBtn.textContent = 'Scan for missed matches';
+// Same fraction-aware sort used by Price Check.
+function parseSizeValue(sizeStr) {
+  const s = (sizeStr || '').trim();
+  const m = s.match(/^(\d+)(?:\s+(\d+)\/(\d+))?$/);
+  if (!m) return null;
+  const whole = parseInt(m[1], 10);
+  if (m[2] && m[3]) return whole + parseInt(m[2], 10) / parseInt(m[3], 10);
+  return whole;
+}
+
+let selectedBrand = null;
+let selectedNotes = null;
+
+function showSuggestions(box, matches, onPick) {
+  box.innerHTML = '';
+  if (matches.length === 0) {
+    box.innerHTML = '<div class="suggestion-empty">No matches</div>';
+    box.classList.add('show');
+    return;
+  }
+  matches.slice(0, 8).forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    item.textContent = m;
+    item.addEventListener('click', () => onPick(m));
+    box.appendChild(item);
+  });
+  box.classList.add('show');
+}
+
+function hideSuggestions(box) {
+  box.classList.remove('show');
+  box.innerHTML = '';
+}
+
+brandInput.addEventListener('input', () => {
+  selectedBrand = null;
+  notesInput.value = '';
+  notesInput.disabled = true;
+  resultsEl.classList.remove('show');
+  const q = brandInput.value.trim().toLowerCase();
+  if (!q || !brandsLoaded) { hideSuggestions(brandSuggestions); return; }
+  const uniqueBrands = [...new Set(allItems.map(i => i.brand).filter(Boolean))];
+  const matches = uniqueBrands.filter(b => b.toLowerCase().includes(q)).sort();
+  showSuggestions(brandSuggestions, matches, (picked) => {
+    brandInput.value = picked;
+    selectedBrand = picked;
+    hideSuggestions(brandSuggestions);
+    notesInput.disabled = false;
+    notesInput.value = '';
+    notesInput.placeholder = 'Start typing a style…';
+    notesInput.focus();
+  });
 });
+
+notesInput.addEventListener('input', () => {
+  selectedNotes = null;
+  resultsEl.classList.remove('show');
+  if (!selectedBrand) { hideSuggestions(notesSuggestions); return; }
+  const q = notesInput.value.trim().toLowerCase();
+  const notesForBrand = [...new Set(
+    allItems.filter(i => i.brand === selectedBrand).map(i => i.notes).filter(n => n !== undefined)
+  )];
+  const matches = (q ? notesForBrand.filter(n => n.toLowerCase().includes(q)) : notesForBrand).sort();
+  if (!q) { hideSuggestions(notesSuggestions); return; }
+  showSuggestions(notesSuggestions, matches, (picked) => {
+    notesInput.value = picked;
+    selectedNotes = picked;
+    hideSuggestions(notesSuggestions);
+    runSearch();
+  });
+});
+
+document.addEventListener('click', (e) => {
+  if (!brandInput.contains(e.target) && !brandSuggestions.contains(e.target)) hideSuggestions(brandSuggestions);
+  if (!notesInput.contains(e.target) && !notesSuggestions.contains(e.target)) hideSuggestions(notesSuggestions);
+});
+
+photoLightbox.addEventListener('click', () => {
+  photoLightbox.classList.remove('show');
+  lightboxImg.src = '';
+});
+
+function renderPhotoThumb(name, url) {
+  const wrap = document.createElement('div');
+  wrap.className = 'photo-thumb';
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = name;
+  img.addEventListener('click', () => {
+    lightboxImg.src = url;
+    lightboxImg.alt = name;
+    photoLightbox.classList.add('show');
+  });
+  wrap.appendChild(img);
+  resultPhotos.appendChild(wrap);
+}
+
+// Same preference logic as Price Check — group by base shot name, prefer
+// the -nobg version when one exists.
+function pickPreferredPhotos(files) {
+  const groups = new Map();
+  files.forEach(f => {
+    const m = f.name.match(/^(.*?)(-nobg)?\.[^.]+$/i);
+    const base = m ? m[1] : f.name;
+    const isNobg = !!(m && m[2]);
+    if (!groups.has(base)) groups.set(base, {});
+    const g = groups.get(base);
+    if (isNobg) g.nobg = f; else g.original = f;
+  });
+  return [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+    .map(([, g]) => g.nobg || g.original)
+    .filter(Boolean);
+}
+
+async function runSearch() {
+  if (!selectedBrand || selectedNotes === null) return;
+
+  const matches = allItems.filter(i => i.brand === selectedBrand && i.notes === selectedNotes);
+  if (matches.length === 0) return;
+
+  emptyStateEl.style.display = 'none';
+  resultsEl.classList.add('show');
+  resultBrand.textContent = selectedBrand;
+  resultNotes.textContent = selectedNotes ? `"${selectedNotes}"` : '(no notes)';
+
+  const sorted = [...matches].sort((a, b) => {
+    const va = parseSizeValue(a.size), vb = parseSizeValue(b.size);
+    if (va !== null && vb !== null) return va - vb;
+    if (va !== null) return -1;
+    if (vb !== null) return 1;
+    return (a.size || '').localeCompare(b.size || '');
+  });
+
+  sizeListEl.innerHTML = '';
+  sorted.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'size-row-display';
+    const bc = document.createElement('span');
+    bc.className = 'size-row-bc';
+    bc.textContent = item.barcode;
+    const size = document.createElement('span');
+    size.className = 'size-row-size';
+    size.textContent = item.size || '(no size)';
+    const qty = document.createElement('span');
+    qty.className = 'size-row-qty';
+    qty.textContent = `Qty ${item.qty || '0'}`;
+    row.append(bc, size, qty);
+    sizeListEl.appendChild(row);
+  });
+
+  // Photos are shared across a whole style — check each matching barcode's
+  // intake folder in order until one with actual photos turns up.
+  resultPhotos.innerHTML = '';
+  photosEmpty.style.display = 'none';
+  let foundPhotos = false;
+  for (const item of sorted) {
+    const files = await listOneDriveFiles(`intake/${item.barcode}`);
+    const imageFiles = (files || []).filter(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+    if (imageFiles.length === 0) continue;
+    const preferred = pickPreferredPhotos(imageFiles);
+    for (const f of preferred) {
+      const blob = await downloadOneDriveFileBlob(`intake/${item.barcode}/${f.name}`);
+      if (!blob) continue;
+      renderPhotoThumb(f.name, URL.createObjectURL(blob));
+      foundPhotos = true;
+    }
+    if (foundPhotos) break;
+  }
+  if (!foundPhotos) photosEmpty.style.display = 'block';
+}
 </script>
 </body>
 </html>
