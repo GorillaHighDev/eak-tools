@@ -814,6 +814,40 @@ function checkDigitStatus(code) {
 }
 
 // ---- Dynamic size rows (each size gets its OWN barcode — apparel tags are size-specific) ----
+// Same fraction-aware sort used by Price Check and Style Lookup, so "7 1/8"
+// correctly sorts before "7 1/4" instead of alphabetically.
+function parseSizeValue(sizeStr) {
+  const s = (sizeStr || '').trim();
+  const m = s.match(/^(\d+)(?:\s+(\d+)\/(\d+))?$/);
+  if (!m) return null;
+  const whole = parseInt(m[1], 10);
+  if (m[2] && m[3]) return whole + parseInt(m[2], 10) / parseInt(m[3], 10);
+  return whole;
+}
+
+// Reorders the rows currently on screen smallest to largest. A row with no
+// barcode yet (nothing scanned into it) always goes last — there's no size
+// to sort by, and it represents whatever's still waiting to be scanned in.
+function sortSizeRowsByCurrentValues() {
+  const rows = [...sizeRowsContainer.querySelectorAll('.size-row')];
+  const withValues = rows.map(row => ({
+    row,
+    size: row.querySelector('.row-size').value.trim(),
+    hasBarcode: row.querySelector('.row-barcode').value.trim() !== '',
+  }));
+  withValues.sort((a, b) => {
+    if (!a.hasBarcode && !b.hasBarcode) return 0;
+    if (!a.hasBarcode) return 1;
+    if (!b.hasBarcode) return -1;
+    const va = parseSizeValue(a.size), vb = parseSizeValue(b.size);
+    if (va !== null && vb !== null) return va - vb;
+    if (va !== null) return -1;
+    if (vb !== null) return 1;
+    return a.size.localeCompare(b.size);
+  });
+  withValues.forEach(({ row }) => sizeRowsContainer.appendChild(row));
+}
+
 function createSizeRow() {
   const row = document.createElement('div');
   row.className = 'size-row';
@@ -1173,6 +1207,7 @@ function startFromBrandNotes(brand, notes) {
   }
 
   const freshRow = createSizeRow();
+  sortSizeRowsByCurrentValues();
   freshRow.querySelector('.row-barcode').focus();
   updateSaveState();
   startHint.style.display = 'block';
@@ -1472,6 +1507,7 @@ function lockBarcode(val) {
       validateRowBarcode(row);
     });
     siblingCount = siblings.length;
+    sortSizeRowsByCurrentValues();
   }
   if (siblingCount > 0) {
     barcodeHint.textContent += ` Found ${siblingCount} other size${siblingCount > 1 ? 's' : ''} of this item — added below.`;
