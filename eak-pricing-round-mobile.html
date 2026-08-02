@@ -1042,25 +1042,20 @@ async function loadExistingPhotos(barcode) {
 
 function uniqueBrandsKnown() {
   const set = new Set();
-  sessionItems.forEach(i => { if (i.brand) set.add(i.brand); });
   Object.values(knownItems).forEach(i => { if (i.brand) set.add(i.brand); });
   return [...set];
 }
 
 function notesForBrand(brand) {
   const set = new Set();
-  sessionItems.forEach(i => { if (i.brand === brand && i.notes !== undefined) set.add(i.notes); });
   Object.values(knownItems).forEach(i => { if (i.brand === brand && i.notes !== undefined) set.add(i.notes); });
   return [...set];
 }
 
 function matchesForBrandNotes(brand, notes) {
-  const map = new Map(); // barcode -> item, session data wins if both have it
+  const map = new Map(); // barcode -> item
   Object.entries(knownItems).forEach(([bc, k]) => {
     if (k.brand === brand && k.notes === notes) map.set(bc, { barcode: bc, ...k });
-  });
-  sessionItems.forEach(item => {
-    if (item.brand === brand && item.notes === notes) map.set(item.barcode, item);
   });
   return [...map.values()];
 }
