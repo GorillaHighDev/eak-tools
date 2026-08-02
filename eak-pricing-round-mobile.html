@@ -82,6 +82,26 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
 }
 .field input:focus{outline:none;border-color:var(--gold)}
 
+.field.autocomplete{position:relative}
+.field.autocomplete input:disabled{opacity:.4}
+.suggestions{
+  position:absolute;top:100%;left:0;right:0;background:var(--panel);
+  border:1px solid var(--gold);border-top:none;border-radius:0 0 6px 6px;
+  max-height:220px;overflow-y:auto;z-index:10;display:none;
+}
+.suggestions.show{display:block}
+.suggestion-item{
+  padding:11px 14px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:#fff;
+  cursor:pointer;border-bottom:1px solid var(--line);
+}
+.suggestion-item:last-child{border-bottom:none}
+.suggestion-item:active{background:var(--ink)}
+.suggestion-empty{padding:11px 14px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--concrete)}
+#start-hint{font-size:.78rem;margin:-6px 0 18px;font-family:'IBM Plex Mono',monospace}
+#start-hint.warn{color:var(--warn)}
+#start-hint:not(.warn){color:var(--good)}
+.row-barcode-hint.mismatch{color:var(--bred)}
+
 #size-rows{margin-bottom:10px}
 .size-row{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px}
 .row-barcode-wrap{display:flex;gap:8px;align-items:center;margin-bottom:6px}
@@ -292,6 +312,19 @@ main{max-width:480px;margin:0 auto;padding:24px 5vw 12vh}
       Use this barcode → continue to pricing
     </button>
   </div>
+
+  <div class="step-label" style="margin-top:0">Have a stray item? Start here instead</div>
+  <div class="field autocomplete">
+    <label>Brand</label>
+    <input type="text" id="start-brand-input" autocomplete="off" placeholder="Start typing a brand…">
+    <div class="suggestions" id="start-brand-suggestions"></div>
+  </div>
+  <div class="field autocomplete">
+    <label>Style / Notes</label>
+    <input type="text" id="start-notes-input" autocomplete="off" placeholder="Pick a brand first…" disabled>
+    <div class="suggestions" id="start-notes-suggestions"></div>
+  </div>
+  <div id="start-hint" class="mono" style="display:none"></div>
 
   <div id="entry-form">
     <div class="step-label">2 · Enter the details</div>
@@ -750,6 +783,11 @@ const missingPhotosResult = document.getElementById('missing-photos-result');
 const fPrice = document.getElementById('f-price');
 const fBrand = document.getElementById('f-brand');
 const fNotes = document.getElementById('f-notes');
+const startBrandInput = document.getElementById('start-brand-input');
+const startNotesInput = document.getElementById('start-notes-input');
+const startBrandSuggestions = document.getElementById('start-brand-suggestions');
+const startNotesSuggestions = document.getElementById('start-notes-suggestions');
+const startHint = document.getElementById('start-hint');
 const sizeRowsContainer = document.getElementById('size-rows');
 const addSizeBtn = document.getElementById('add-size-btn');
 const cameraBtn = document.getElementById('camera-btn');
@@ -811,7 +849,7 @@ function validateRowBarcode(row) {
   const hint = row.querySelector('.row-barcode-hint');
   const val = bcInput.value.trim();
   bcInput.classList.remove('locked');
-  hint.classList.remove('warn');
+  hint.classList.remove('warn', 'mismatch');
   hint.textContent = '';
   if (!val) return;
 
@@ -820,6 +858,11 @@ function validateRowBarcode(row) {
     .filter(r => r !== row)
     .some(r => r.querySelector('.row-barcode').value.trim() === val);
   const check = checkDigitStatus(val);
+  const known = val !== currentGeneratedSKU ? getKnownItem(val) : null;
+  const formBrand = fBrand.value.trim().toUpperCase();
+  const formNotes = fNotes.value.trim().toUpperCase();
+  const mismatch = known && (formBrand || formNotes) &&
+    ((known.brand || '').toUpperCase() !== formBrand || (known.notes || '').toUpperCase() !== formNotes);
 
   if (dupHere) {
     hint.textContent = '⚠ Same barcode as another size above — check the tags.';
@@ -830,6 +873,9 @@ function validateRowBarcode(row) {
   } else if (check === false) {
     hint.textContent = '⚠ Check digit doesn\u2019t validate — worth a re-scan.';
     hint.classList.add('warn');
+  } else if (mismatch) {
+    hint.textContent = `⚠ This barcode is already saved under a different style: ${known.brand || '(no brand)'}${known.notes ? ' · ' + known.notes : ''} at $${known.price}. Double check before saving.`;
+    hint.classList.add('mismatch');
   } else {
     bcInput.classList.add('locked');
   }
@@ -984,6 +1030,141 @@ async function loadExistingPhotos(barcode) {
     img.alt = f.name;
     existingPhotosEl.appendChild(img);
   }
+}
+
+// ---- Start from Brand + Style instead of a scan ----
+// For the "stray item" case: its siblings were already scanned under a
+// different table/session, but this specific size never got picked up.
+// Picking an existing Brand+Notes combo here pulls in everything already
+// known about that style, then leaves one fresh row ready for the item
+// actually in hand — same idea as scanning a known barcode, just entered
+// from the other direction.
+
+function uniqueBrandsKnown() {
+  const set = new Set();
+  sessionItems.forEach(i => { if (i.brand) set.add(i.brand); });
+  Object.values(knownItems).forEach(i => { if (i.brand) set.add(i.brand); });
+  return [...set];
+}
+
+function notesForBrand(brand) {
+  const set = new Set();
+  sessionItems.forEach(i => { if (i.brand === brand && i.notes !== undefined) set.add(i.notes); });
+  Object.values(knownItems).forEach(i => { if (i.brand === brand && i.notes !== undefined) set.add(i.notes); });
+  return [...set];
+}
+
+function matchesForBrandNotes(brand, notes) {
+  const map = new Map(); // barcode -> item, session data wins if both have it
+  Object.entries(knownItems).forEach(([bc, k]) => {
+    if (k.brand === brand && k.notes === notes) map.set(bc, { barcode: bc, ...k });
+  });
+  sessionItems.forEach(item => {
+    if (item.brand === brand && item.notes === notes) map.set(item.barcode, item);
+  });
+  return [...map.values()];
+}
+
+function showSuggestions(box, matches, onPick) {
+  box.innerHTML = '';
+  if (matches.length === 0) {
+    box.innerHTML = '<div class="suggestion-empty">No matches</div>';
+    box.classList.add('show');
+    return;
+  }
+  matches.slice(0, 8).forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    item.textContent = m;
+    item.addEventListener('click', () => onPick(m));
+    box.appendChild(item);
+  });
+  box.classList.add('show');
+}
+
+function hideSuggestions(box) {
+  box.classList.remove('show');
+  box.innerHTML = '';
+}
+
+startBrandInput.addEventListener('input', () => {
+  startNotesInput.value = '';
+  startNotesInput.disabled = true;
+  const q = startBrandInput.value.trim().toLowerCase();
+  if (!q) { hideSuggestions(startBrandSuggestions); return; }
+  const matches = uniqueBrandsKnown().filter(b => b.toLowerCase().includes(q)).sort();
+  showSuggestions(startBrandSuggestions, matches, (picked) => {
+    startBrandInput.value = picked;
+    hideSuggestions(startBrandSuggestions);
+    startNotesInput.disabled = false;
+    startNotesInput.value = '';
+    startNotesInput.placeholder = 'Start typing a style…';
+    startNotesInput.focus();
+  });
+});
+
+startNotesInput.addEventListener('input', () => {
+  const brand = startBrandInput.value.trim();
+  if (!brand) { hideSuggestions(startNotesSuggestions); return; }
+  const q = startNotesInput.value.trim().toLowerCase();
+  const options = notesForBrand(brand);
+  const matches = (q ? options.filter(n => n.toLowerCase().includes(q)) : options).sort();
+  if (!q) { hideSuggestions(startNotesSuggestions); return; }
+  showSuggestions(startNotesSuggestions, matches, (picked) => {
+    startNotesInput.value = picked;
+    hideSuggestions(startNotesSuggestions);
+    startFromBrandNotes(brand, picked);
+  });
+});
+
+document.addEventListener('click', (e) => {
+  if (!startBrandInput.contains(e.target) && !startBrandSuggestions.contains(e.target)) hideSuggestions(startBrandSuggestions);
+  if (!startNotesInput.contains(e.target) && !startNotesSuggestions.contains(e.target)) hideSuggestions(startNotesSuggestions);
+});
+
+function startFromBrandNotes(brand, notes) {
+  const matches = matchesForBrandNotes(brand, notes);
+
+  // Same gating flag the normal scan flow uses — Save only checks that this
+  // is truthy, it's never read for its actual value, so a placeholder here
+  // is safe. The real save data always comes from the size rows themselves.
+  lockedBarcode = 'brand-style-start';
+  barcodeInput.value = '';
+  barcodeInput.classList.remove('locked');
+  entryForm.classList.add('show');
+
+  fPrice.value = matches.length > 0 ? matches[0].price : '';
+  fBrand.value = brand;
+  fNotes.value = notes;
+  sizeRowsContainer.innerHTML = '';
+  clearExistingPhotos();
+  resetPhotos();
+
+  if (matches.length > 0) {
+    matches.forEach(m => {
+      const row = createSizeRow();
+      row.querySelector('.row-barcode').value = m.barcode;
+      if (m.size) row.querySelector('.row-size').value = m.size;
+      if (hasValue(m.qty)) row.querySelector('.row-qty').value = m.qty;
+      validateRowBarcode(row);
+    });
+    startHint.textContent = `↺ Found ${matches.length} existing size${matches.length > 1 ? 's' : ''} — scan the new one below to add it, or edit any row above.`;
+    startHint.classList.remove('warn');
+    (async () => {
+      for (const m of matches) {
+        await loadExistingPhotos(m.barcode);
+        if (existingPhotosConfirmed) break;
+      }
+    })();
+  } else {
+    startHint.textContent = 'No existing match — this is a brand-new style. Scan the item below to start it.';
+    startHint.classList.add('warn');
+  }
+
+  const freshRow = createSizeRow();
+  freshRow.querySelector('.row-barcode').focus();
+  updateSaveState();
+  startHint.style.display = 'block';
 }
 
 // ---- Generate-a-barcode panel ----
