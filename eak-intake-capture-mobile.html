@@ -132,6 +132,14 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
   letter-spacing:.03em;cursor:pointer;padding:0 0 16px;display:block;
 }
 #im-status{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);margin-bottom:16px}
+#im-update-btn{
+  display:block;width:100%;margin-top:20px;padding:15px;background:var(--gold);border:none;
+  color:var(--ink);border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;
+  font-weight:700;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+}
+#im-update-btn:disabled{opacity:.35;cursor:default}
+#im-update-hint{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.72rem;
+  color:var(--concrete);margin-top:8px}
 #im-info{display:none;text-align:center;margin-bottom:20px;padding:14px;background:var(--panel);
   border-radius:8px;border:1px solid var(--line)}
 #im-info.show{display:block}
@@ -262,6 +270,8 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
       </div>
       <input type="file" id="im-camera-input" accept="image/*" capture="environment" style="display:none">
       <input type="file" id="im-library-input" accept="image/*" multiple style="display:none">
+      <button type="button" id="im-update-btn" disabled>Update</button>
+      <div id="im-update-hint">Add at least one photo to enable Update.</div>
     </div>
   </div>
 </div>
@@ -769,36 +779,60 @@ const imCameraBtn = document.getElementById('im-camera-btn');
 const imLibraryBtn = document.getElementById('im-library-btn');
 const imCameraInput = document.getElementById('im-camera-input');
 const imLibraryInput = document.getElementById('im-library-input');
+const imUpdateBtn = document.getElementById('im-update-btn');
+const imUpdateHint = document.getElementById('im-update-hint');
 
 let imCurrentBarcode = null;
 
-// Tracks which items now have at least one photo — filtered out of the list
-// rather than physically removed from SHOT_LIST, so a deleted photo can
-// correctly bring an item back onto the list too.
+// Completion is an explicit action, not inferred from whether photos happen
+// to exist — the person hits Update when an item is genuinely done. That
+// gets written to its own permanent file in OneDrive, so an item stays off
+// the list across reloads, devices, and sessions.
+const SHOT_LIST_COMPLETED_PATH = 'shot-list/completed.csv';
 const completedBarcodes = new Set();
 let shotListChecked = false;
 let shotListChecking = false;
 
-// Checks each shot-list item's ACTUAL intake folder once, in parallel, so
-// completion status is permanent (based on real OneDrive data, not a
-// separate tracking flag that could drift out of sync) but still fast —
-// only ever runs once per connection, not on every list render. Local
-// updates after this (adding/deleting a photo) stay instant in-memory.
 async function ensureShotListChecked() {
   if (shotListChecked || shotListChecking) return;
   if (!msalInstance.getActiveAccount()) return;
   shotListChecking = true;
-  imListStatus.textContent = 'Checking which items still need photos...';
+  imListStatus.textContent = 'Loading list...';
 
-  await Promise.all(SHOT_LIST.map(async (item) => {
-    const files = await listOneDriveFiles(`intake/${item.barcode}`);
-    const hasPhotos = (files || []).some(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
-    if (hasPhotos) completedBarcodes.add(item.barcode);
-  }));
+  const result = await downloadOneDriveFileWithStatus(SHOT_LIST_COMPLETED_PATH);
+  if (result.status === 'ok') {
+    parseCSV(result.text).slice(1).forEach(row => {
+      if (row[0]) completedBarcodes.add(row[0].trim());
+    });
+  } else if (result.status !== 'notfound') {
+    imListStatus.textContent = 'Could not load completed items — check your connection.';
+    shotListChecking = false;
+    return;
+  }
 
   shotListChecked = true;
   shotListChecking = false;
   renderShotList(imListSearch.value);
+}
+
+// Appends this barcode to the permanent completed file. Re-reads first so a
+// completion recorded from another device or session is never overwritten.
+async function markShotListItemComplete(barcode) {
+  const result = await downloadOneDriveFileWithStatus(SHOT_LIST_COMPLETED_PATH);
+  let existingRows = [];
+  if (result.status === 'ok') {
+    existingRows = parseCSV(result.text).slice(1).filter(r => r[0]);
+  } else if (result.status !== 'notfound') {
+    return false;
+  }
+
+  const byBarcode = new Map();
+  existingRows.forEach(r => byBarcode.set(r[0].trim(), r));
+  byBarcode.set(barcode, [barcode, new Date().toISOString()]);
+
+  const allRows = [['Barcode', 'CompletedAt'], ...byBarcode.values()];
+  const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  return await uploadToOneDrive(SHOT_LIST_COMPLETED_PATH, csvContent, 'text/csv');
 }
 
 function renderShotList(filterText) {
@@ -835,11 +869,6 @@ function initImageManagerList() {
 }
 
 imBackBtn.addEventListener('click', () => {
-  if (imCurrentBarcode) {
-    const hasPhotos = imPhotoGrid.children.length > 0;
-    if (hasPhotos) completedBarcodes.add(imCurrentBarcode);
-    else completedBarcodes.delete(imCurrentBarcode);
-  }
   imDetailView.style.display = 'none';
   imListView.style.display = 'block';
   imCurrentBarcode = null;
@@ -897,7 +926,40 @@ async function loadImageManagerFor(barcode) {
       renderImPhotoThumb(f.name, URL.createObjectURL(blob));
     }
   }
+  updateImUpdateBtnState();
 }
+
+// Update is only available once there's at least one photo — there's nothing
+// to mark done otherwise.
+function updateImUpdateBtnState() {
+  const hasPhotos = imPhotoGrid.children.length > 0;
+  imUpdateBtn.disabled = !hasPhotos;
+  imUpdateHint.textContent = hasPhotos
+    ? 'Marks this item complete and removes it from the list.'
+    : 'Add at least one photo to enable Update.';
+}
+
+imUpdateBtn.addEventListener('click', async () => {
+  if (!imCurrentBarcode) return;
+  imUpdateBtn.disabled = true;
+  const origLabel = imUpdateBtn.textContent;
+  imUpdateBtn.textContent = 'Saving...';
+
+  const ok = await markShotListItemComplete(imCurrentBarcode);
+  if (!ok) {
+    alert('Could not save — check your connection and try again.');
+    imUpdateBtn.textContent = origLabel;
+    updateImUpdateBtnState();
+    return;
+  }
+
+  completedBarcodes.add(imCurrentBarcode);
+  imUpdateBtn.textContent = origLabel;
+  imDetailView.style.display = 'none';
+  imListView.style.display = 'block';
+  imCurrentBarcode = null;
+  renderShotList(imListSearch.value);
+});
 
 function renderImPhotoThumb(name, url) {
   const wrap = document.createElement('div');
@@ -931,6 +993,7 @@ async function handleImPhotoDelete(name, btn, wrap) {
   wrap.remove();
   if (imPhotoGrid.children.length === 0) imPhotosEmpty.style.display = 'block';
   imStatus.textContent = `${imCurrentBarcode} — ${imPhotoGrid.children.length} photo${imPhotoGrid.children.length === 1 ? '' : 's'} on file`;
+  updateImUpdateBtnState();
 }
 
 function imNextPhotoNumber() {
