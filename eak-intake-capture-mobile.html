@@ -114,12 +114,23 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 .mode-panel.active{display:block}
 
 /* ---- Image Manager ---- */
-#im-barcode-input{
+#im-list-status{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);margin-bottom:16px}
+#im-list-search{
   width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;
-  padding:14px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:1.1rem;text-align:center;
-  letter-spacing:.04em;margin-bottom:16px;
+  padding:12px 14px;color:#fff;font-family:'Space Grotesk',sans-serif;font-size:1rem;margin-bottom:14px;
 }
-#im-barcode-input:focus{outline:none;border-color:var(--gold)}
+#im-list-search:focus{outline:none;border-color:var(--gold)}
+.im-list-item{
+  padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer;
+}
+.im-list-item:active{background:var(--panel)}
+.im-list-item-brand{font-family:'Anton',sans-serif;font-size:1rem;color:#fff;text-transform:uppercase}
+.im-list-item-notes{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--gold);margin-top:2px}
+.im-list-item-price{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--concrete);margin-top:2px}
+#im-back-btn{
+  background:none;border:none;color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:.75rem;
+  letter-spacing:.03em;cursor:pointer;padding:0 0 16px;display:block;
+}
 #im-status{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);margin-bottom:16px}
 #im-info{display:none;text-align:center;margin-bottom:20px;padding:14px;background:var(--panel);
   border-radius:8px;border:1px solid var(--line)}
@@ -228,22 +239,30 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 </div>
 
 <div id="mode-image-manager" class="mode-panel">
-  <input type="text" id="im-barcode-input" placeholder="Scan a barcode" autocomplete="off">
-  <div id="im-info">
-    <div id="im-info-brand"></div>
-    <div id="im-info-notes"></div>
-    <div id="im-info-qty">Total On Hand (all sizes): <b id="im-info-qty-value"></b></div>
+  <div id="im-list-view">
+    <div id="im-list-status">Connect OneDrive to load items missing photos.</div>
+    <input type="text" id="im-list-search" placeholder="Search by brand or style…" autocomplete="off" style="display:none">
+    <div id="im-list"></div>
   </div>
-  <div id="im-status">Scan an item to see and manage its photos.</div>
-  <div id="im-result">
-    <div class="im-photo-grid" id="im-photo-grid"></div>
-    <div id="im-photos-empty" style="display:none">No photos on file for this item yet.</div>
-    <div class="im-add-buttons">
-      <button type="button" id="im-camera-btn">+ Take Photo</button>
-      <button type="button" id="im-library-btn">+ Choose from Library</button>
+
+  <div id="im-detail-view" style="display:none">
+    <button type="button" id="im-back-btn">← Back to list</button>
+    <div id="im-info">
+      <div id="im-info-brand"></div>
+      <div id="im-info-notes"></div>
+      <div id="im-info-qty">Total On Hand (all sizes): <b id="im-info-qty-value"></b></div>
     </div>
-    <input type="file" id="im-camera-input" accept="image/*" capture="environment" style="display:none">
-    <input type="file" id="im-library-input" accept="image/*" multiple style="display:none">
+    <div id="im-status"></div>
+    <div id="im-result">
+      <div class="im-photo-grid" id="im-photo-grid"></div>
+      <div id="im-photos-empty" style="display:none">No photos on file for this item yet.</div>
+      <div class="im-add-buttons">
+        <button type="button" id="im-camera-btn">+ Take Photo</button>
+        <button type="button" id="im-library-btn">+ Choose from Library</button>
+      </div>
+      <input type="file" id="im-camera-input" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="im-library-input" accept="image/*" multiple style="display:none">
+    </div>
   </div>
 </div>
 
@@ -673,7 +692,69 @@ function csvEscape(val) {
 }
 
 // ==================== IMAGE MANAGER ====================
-const imBarcodeInput = document.getElementById('im-barcode-input');
+// The list below is the person's own shot list, entered as-is — not
+// computed from checking which items currently lack photos. If the list
+// changes, this array is what needs updating.
+const SHOT_LIST = [
+  { barcode: 'P000532', name: 'Blind Trust Vintage Wash Jean', price: '99.99' },
+  { barcode: 'P000514', name: 'Brooklyn 97 Xpress "Black Blast" Jean', price: '64.99' },
+  { barcode: 'P000396', name: 'Concept "Dunkirk" Jean — Jet Black', price: '99.99' },
+  { barcode: 'P000484', name: 'Concept "Santos" Jean — Dirty Light Wash', price: '98.99' },
+  { barcode: 'P000530', name: 'DenimiCity Skinny Jean — Pure White', price: '109.99' },
+  { barcode: '893784136276', name: 'FWRD Denim Paint Splatter Jean — White', price: '39.99' },
+  { barcode: '893784145469', name: 'FWRD Denim Slim Fit Jean — Stone Blue', price: '39.99' },
+  { barcode: 'P000555', name: 'Focus 2418 Slim Taper Jean — Vintage Blue Wash', price: '89.99' },
+  { barcode: 'P000440', name: 'Focus 5244 Premium Clean Slim Denim — White', price: '79.99' },
+  { barcode: 'P000527', name: 'Focus B9004 Marble Wash Jean — Cream & Blue', price: '109.99' },
+  { barcode: 'P000448', name: 'GFTD LA Ace Jean — Washed Black', price: '119.99' },
+  { barcode: 'P000499', name: 'GFTD LA Aston Nylon Short — Grey', price: '99.99' },
+  { barcode: 'P000517', name: 'GFTD LA Cargo Pant — Gunmetal', price: '119.99' },
+  { barcode: 'P000507', name: 'GFTD LA Clinton Jean — Washed Black', price: '49.99' },
+  { barcode: 'P000503', name: 'GUAPI Distressed Flare Denim — Blue', price: '179.99' },
+  { barcode: 'P000432', name: 'GUAPI Waxed Denim — Red', price: '179.99' },
+  { barcode: 'EAK-HYPE-S', name: 'Hype Tee', price: '39.99' },
+  { barcode: '196539606070', name: 'Jordan Craig Martin Distressed Jean — Ice Blue', price: '64.99' },
+  { barcode: '196539606438', name: 'Jordan Craig Martin Distressed Jean — Smoked Grey', price: '64.99' },
+  { barcode: '196539606162', name: 'Jordan Craig Martin Jean — Black Shadow', price: '64.99' },
+  { barcode: '196539606254', name: 'Jordan Craig Martin Jean — Desert Wash', price: '64.99' },
+  { barcode: '196539592878', name: 'Jordan Craig Martin Jean — Lager Wash', price: '59.99' },
+  { barcode: '196539592632', name: 'Jordan Craig Martin Jean — Deep Blue (Legacy Edition)', price: '59.99' },
+  { barcode: '196539592717', name: 'Jordan Craig Martin Jean — Industrial Black (Legacy Edition)', price: '59.99' },
+  { barcode: '196539373286', name: 'Jordan Craig Ross "Meadowlands" Denim — Olive (Legacy Edition)', price: '94.99' },
+  { barcode: 'P000386', name: 'KDNK Acid Wash Cargo Jean — Brown', price: '79.99' },
+  { barcode: 'P000447', name: 'KDNK Cream Denim Jean — Off White', price: '79.99' },
+  { barcode: 'P000228', name: 'KDNK Rhinestone Skinny Jean — Grey', price: '89.99' },
+  { barcode: 'P000243', name: 'KDNK Rhinestone Skinny Jean — Light Blue Acid Wash', price: '89.99' },
+  { barcode: 'P000209', name: 'KDNK Rhinestone Skinny Jean — White', price: '89.99' },
+  { barcode: 'P000220', name: 'KDNK Skinny Jean — Jet Black', price: '89.99' },
+  { barcode: '680660970044', name: 'KLTURE Side-Stripe Denim — Dark Blue', price: '89.99' },
+  { barcode: 'P000482', name: 'Midnight Black Coated Skinny Jean', price: '79.99' },
+  { barcode: 'P000341', name: 'Politics "Quin 385" Embellished Jean — Light Blue', price: '139.99' },
+  { barcode: 'P000119', name: 'Ransom London "Glacier" Denim — Ice Blue Distressed', price: '119.99' },
+  { barcode: 'P000294', name: 'Ransom London Foam Wash Stretch Skinny Jean', price: '119.99' },
+  { barcode: 'P000421', name: 'Reelistik NYC Distressed Denim — Tan Blue', price: '89.99' },
+  { barcode: 'P000404', name: 'Serenede "Beluga" Jean — Grey', price: '139.99' },
+  { barcode: 'P000302', name: 'Serenede Black Fitted Jean', price: '139.99' },
+  { barcode: 'P000287', name: 'Serenede Fitted Jean — Blue Wash', price: '139.99' },
+  { barcode: 'P000349', name: 'Serenede Fitted Jean — Charcoal', price: '139.99' },
+  { barcode: 'P000481', name: 'Serenede Fitted Jean — Coated Black', price: '139.99' },
+  { barcode: 'P000454', name: 'Serenede Fitted Jean — Light Blue', price: '139.99' },
+  { barcode: 'P000307', name: 'Serenede Fitted Jean — Stone Wash Brown', price: '139.99' },
+  { barcode: 'P000414', name: 'Serenede Fitted Jean — Washed Black', price: '139.99' },
+  { barcode: 'P000409', name: 'Spark 5-Pocket Denim Pant — Grey', price: '68.99' },
+  { barcode: 'P000469', name: 'Taker "Timber" Camo Straight Denim', price: '118.99' },
+  { barcode: 'P000513', name: 'Taker Jean — Jet Black', price: '79.99' },
+  { barcode: 'P000511', name: 'Taker Stretch Jean — Jet Black', price: '79.99' },
+  { barcode: 'P000545', name: 'Vicious Denim "Rocky" Distressed Jean — Blue', price: '119.99' },
+  { barcode: 'P000510', name: 'Vicious Denim Rhinestone Faux Leather Pant — Cobalt Blue', price: '119.99' },
+];
+
+const imListStatus = document.getElementById('im-list-status');
+const imListSearch = document.getElementById('im-list-search');
+const imListEl = document.getElementById('im-list');
+const imListView = document.getElementById('im-list-view');
+const imDetailView = document.getElementById('im-detail-view');
+const imBackBtn = document.getElementById('im-back-btn');
 const imStatus = document.getElementById('im-status');
 const imInfo = document.getElementById('im-info');
 const imInfoBrand = document.getElementById('im-info-brand');
@@ -689,13 +770,51 @@ const imLibraryInput = document.getElementById('im-library-input');
 
 let imCurrentBarcode = null;
 
-imBarcodeInput.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  e.preventDefault();
-  const val = imBarcodeInput.value.trim();
-  if (!val) return;
-  loadImageManagerFor(val);
+function renderShotList(filterText) {
+  imListEl.innerHTML = '';
+  const q = (filterText || '').trim().toLowerCase();
+  const matches = q
+    ? SHOT_LIST.filter(item => item.name.toLowerCase().includes(q))
+    : SHOT_LIST;
+
+  matches.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'im-list-item';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'im-list-item-brand';
+    nameEl.textContent = item.name;
+    const bcEl = document.createElement('div');
+    bcEl.className = 'im-list-item-notes';
+    bcEl.textContent = item.barcode;
+    const priceEl = document.createElement('div');
+    priceEl.className = 'im-list-item-price';
+    priceEl.textContent = `$${item.price}`;
+    row.append(nameEl, bcEl, priceEl);
+    row.addEventListener('click', () => openImageManagerDetail(item.barcode));
+    imListEl.appendChild(row);
+  });
+
+  imListStatus.textContent = `${SHOT_LIST.length} item${SHOT_LIST.length === 1 ? '' : 's'} on the list${q ? ` — ${matches.length} matching` : ''}`;
+}
+
+imListSearch.addEventListener('input', () => renderShotList(imListSearch.value));
+
+function initImageManagerList() {
+  imListSearch.style.display = 'block';
+  renderShotList('');
+}
+
+imBackBtn.addEventListener('click', () => {
+  imDetailView.style.display = 'none';
+  imListView.style.display = 'block';
+  imCurrentBarcode = null;
 });
+
+async function openImageManagerDetail(barcode) {
+  imListView.style.display = 'none';
+  imDetailView.style.display = 'block';
+  await loadImageManagerFor(barcode);
+}
 
 async function loadImageManagerFor(barcode) {
   if (!msalInstance.getActiveAccount()) {
@@ -822,6 +941,8 @@ imLibraryInput.addEventListener('change', () => {
   if (imLibraryInput.files.length) handleImAddPhotos(imLibraryInput.files);
   imLibraryInput.value = '';
 });
+
+initImageManagerList();
 
 // ==================== INVENTORY COUNT ====================
 // Separate file from pricing-master.csv on purpose — this tracks a physical
