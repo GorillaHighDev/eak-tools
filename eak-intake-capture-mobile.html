@@ -121,6 +121,14 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 }
 #im-barcode-input:focus{outline:none;border-color:var(--gold)}
 #im-status{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);margin-bottom:16px}
+#im-info{display:none;text-align:center;margin-bottom:20px;padding:14px;background:var(--panel);
+  border-radius:8px;border:1px solid var(--line)}
+#im-info.show{display:block}
+#im-info-brand{font-family:'Anton',sans-serif;font-size:1.2rem;color:#fff;text-transform:uppercase}
+#im-info-notes{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--gold);margin-top:2px}
+#im-info-qty{font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--concrete);margin-top:8px}
+#im-info-qty b{color:#fff;font-size:.95rem}
 #im-result{display:none}
 #im-result.show{display:block}
 .im-photo-grid{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:16px}
@@ -221,6 +229,11 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 
 <div id="mode-image-manager" class="mode-panel">
   <input type="text" id="im-barcode-input" placeholder="Scan a barcode" autocomplete="off">
+  <div id="im-info">
+    <div id="im-info-brand"></div>
+    <div id="im-info-notes"></div>
+    <div id="im-info-qty">Total On Hand (all sizes): <b id="im-info-qty-value"></b></div>
+  </div>
   <div id="im-status">Scan an item to see and manage its photos.</div>
   <div id="im-result">
     <div class="im-photo-grid" id="im-photo-grid"></div>
@@ -662,6 +675,10 @@ function csvEscape(val) {
 // ==================== IMAGE MANAGER ====================
 const imBarcodeInput = document.getElementById('im-barcode-input');
 const imStatus = document.getElementById('im-status');
+const imInfo = document.getElementById('im-info');
+const imInfoBrand = document.getElementById('im-info-brand');
+const imInfoNotes = document.getElementById('im-info-notes');
+const imInfoQtyValue = document.getElementById('im-info-qty-value');
 const imResult = document.getElementById('im-result');
 const imPhotoGrid = document.getElementById('im-photo-grid');
 const imPhotosEmpty = document.getElementById('im-photos-empty');
@@ -690,6 +707,24 @@ async function loadImageManagerFor(barcode) {
   imResult.classList.remove('show');
   imPhotoGrid.innerHTML = '';
   imPhotosEmpty.style.display = 'none';
+
+  // View-only context: this item's Brand/Notes, and total quantity across
+  // every size of the same style (not just this one barcode's own qty).
+  const known = allItems.find(i => i.barcode === barcode);
+  if (known) {
+    const totalQty = allItems
+      .filter(i => i.brand === known.brand && i.notes === known.notes)
+      .reduce((sum, i) => sum + (parseInt(i.qty, 10) || 0), 0);
+    imInfoBrand.textContent = known.brand || '(no brand)';
+    imInfoNotes.textContent = known.notes ? `"${known.notes}"` : '(no notes)';
+    imInfoQtyValue.textContent = totalQty;
+    imInfo.classList.add('show');
+  } else {
+    imInfoBrand.textContent = '(not in price book)';
+    imInfoNotes.textContent = '';
+    imInfoQtyValue.textContent = '0';
+    imInfo.classList.add('show');
+  }
 
   const files = await listOneDriveFiles(`intake/${barcode}`);
   const imageFiles = (files || []).filter(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
