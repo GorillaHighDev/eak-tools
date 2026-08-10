@@ -770,12 +770,16 @@ const imLibraryInput = document.getElementById('im-library-input');
 
 let imCurrentBarcode = null;
 
+// Tracks which items now have at least one photo — filtered out of the list
+// rather than physically removed from SHOT_LIST, so a deleted photo can
+// correctly bring an item back onto the list too.
+const completedBarcodes = new Set();
+
 function renderShotList(filterText) {
   imListEl.innerHTML = '';
   const q = (filterText || '').trim().toLowerCase();
-  const matches = q
-    ? SHOT_LIST.filter(item => item.name.toLowerCase().includes(q))
-    : SHOT_LIST;
+  const remaining = SHOT_LIST.filter(item => !completedBarcodes.has(item.barcode));
+  const matches = q ? remaining.filter(item => item.name.toLowerCase().includes(q)) : remaining;
 
   matches.forEach(item => {
     const row = document.createElement('div');
@@ -794,7 +798,7 @@ function renderShotList(filterText) {
     imListEl.appendChild(row);
   });
 
-  imListStatus.textContent = `${SHOT_LIST.length} item${SHOT_LIST.length === 1 ? '' : 's'} on the list${q ? ` — ${matches.length} matching` : ''}`;
+  imListStatus.textContent = `${remaining.length} of ${SHOT_LIST.length} remaining${q ? ` — ${matches.length} matching` : ''}`;
 }
 
 imListSearch.addEventListener('input', () => renderShotList(imListSearch.value));
@@ -805,9 +809,15 @@ function initImageManagerList() {
 }
 
 imBackBtn.addEventListener('click', () => {
+  if (imCurrentBarcode) {
+    const hasPhotos = imPhotoGrid.children.length > 0;
+    if (hasPhotos) completedBarcodes.add(imCurrentBarcode);
+    else completedBarcodes.delete(imCurrentBarcode);
+  }
   imDetailView.style.display = 'none';
   imListView.style.display = 'block';
   imCurrentBarcode = null;
+  renderShotList(imListSearch.value);
 });
 
 async function openImageManagerDetail(barcode) {
