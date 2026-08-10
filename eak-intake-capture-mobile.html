@@ -325,6 +325,7 @@ modeTabs.forEach(tab => {
     tab.classList.add('active');
     Object.values(modePanels).forEach(p => p.classList.remove('active'));
     modePanels[tab.dataset.mode].classList.add('active');
+    if (tab.dataset.mode === 'image-manager') ensureShotListChecked();
   });
 });
 
@@ -337,6 +338,7 @@ function updateOneDriveUI() {
     odConnectBtn.style.display = 'none';
     odDisconnectBtn.style.display = 'inline-block';
     loadAllItems();
+    ensureShotListChecked();
   } else {
     odStatus.textContent = '☁ Not connected — connect to search';
     odStatus.classList.remove('connected');
@@ -774,6 +776,30 @@ let imCurrentBarcode = null;
 // rather than physically removed from SHOT_LIST, so a deleted photo can
 // correctly bring an item back onto the list too.
 const completedBarcodes = new Set();
+let shotListChecked = false;
+let shotListChecking = false;
+
+// Checks each shot-list item's ACTUAL intake folder once, in parallel, so
+// completion status is permanent (based on real OneDrive data, not a
+// separate tracking flag that could drift out of sync) but still fast —
+// only ever runs once per connection, not on every list render. Local
+// updates after this (adding/deleting a photo) stay instant in-memory.
+async function ensureShotListChecked() {
+  if (shotListChecked || shotListChecking) return;
+  if (!msalInstance.getActiveAccount()) return;
+  shotListChecking = true;
+  imListStatus.textContent = 'Checking which items still need photos...';
+
+  await Promise.all(SHOT_LIST.map(async (item) => {
+    const files = await listOneDriveFiles(`intake/${item.barcode}`);
+    const hasPhotos = (files || []).some(f => /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+    if (hasPhotos) completedBarcodes.add(item.barcode);
+  }));
+
+  shotListChecked = true;
+  shotListChecking = false;
+  renderShotList(imListSearch.value);
+}
 
 function renderShotList(filterText) {
   imListEl.innerHTML = '';
