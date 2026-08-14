@@ -114,6 +114,29 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 .mode-panel.active{display:block}
 
 /* ---- Image Manager ---- */
+#im-list-picker{display:flex;gap:8px;margin-bottom:14px}
+.im-list-tab{
+  flex:1;padding:10px 6px;background:none;border:1.5px solid var(--line);color:var(--concrete);
+  border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.03em;
+  text-transform:uppercase;cursor:pointer;
+}
+.im-list-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(217,162,46,.08)}
+.im-badge{
+  display:inline-block;padding:2px 7px;border-radius:3px;font-family:'IBM Plex Mono',monospace;
+  font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;margin-right:6px;margin-top:5px;
+}
+.im-badge.offline{background:var(--bred);color:#fff}
+.im-badge.live{background:rgba(63,181,111,.18);color:var(--good)}
+.im-badge.flag{background:rgba(232,161,59,.18);color:var(--warn)}
+.im-list-item-shoot{font-family:'IBM Plex Mono',monospace;font-size:.74rem;color:#fff;margin-top:4px}
+.im-list-item-shoot b{color:var(--gold)}
+#im-shoot-note{display:none;background:var(--panel);border-left:3px solid var(--gold);
+  padding:12px 14px;border-radius:3px;margin-bottom:16px;font-size:.82rem;line-height:1.5;color:var(--paper)}
+#im-shoot-note.show{display:block}
+#im-shoot-note .sn-label{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--concrete);display:block;margin-bottom:4px}
+#im-shoot-note .sn-shoot{color:var(--gold);font-weight:600;margin-bottom:10px}
+#im-shoot-note .sn-why{color:var(--concrete);font-size:.78rem}
 #im-list-status{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--concrete);margin-bottom:16px}
 #im-list-search{
   width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;
@@ -262,6 +285,10 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 
 <div id="mode-image-manager" class="mode-panel">
   <div id="im-list-view">
+    <div id="im-list-picker">
+      <button type="button" class="im-list-tab active" data-list="missing">Missing Photos</button>
+      <button type="button" class="im-list-tab" data-list="reshoot">Reshoot Audit</button>
+    </div>
     <div id="im-list-status">Connect OneDrive to load items missing photos.</div>
     <input type="text" id="im-list-search" placeholder="Search by brand or style…" autocomplete="off" style="display:none">
     <div id="im-list"></div>
@@ -269,6 +296,7 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 
   <div id="im-detail-view" style="display:none">
     <button type="button" id="im-back-btn">← Back to list</button>
+    <div id="im-shoot-note"></div>
     <div id="im-info">
       <div id="im-info-brand"></div>
       <div id="im-info-notes"></div>
@@ -779,6 +807,85 @@ const SHOT_LIST = [
   { barcode: 'P000510', name: 'Vicious Denim Rhinestone Faux Leather Pant — Cobalt Blue', price: '119.99' },
 ];
 
+// The reshoot audit list — a second, separate list from the shot list above.
+// These items already have live photos that are wrong or unusable; Group A
+// items are currently set to DRAFT (offline) until reshot, Group B are still
+// live. `shoot` is the colour to actually photograph, which in several cases
+// disagrees with what's live and even with the product title.
+const RESHOOT_LIST = [
+  { barcode: 'P000467', name: 'GFTD LA Vanta Denim — Olive Coated', group: 'A',
+    shoot: 'Sage-olive waxed denim',
+    why: 'All 5 live images were the BLACK Vanta. Hangtag confirms STYLE: VANTA / COLOR: OLIVE. Sibling of the Black Coated listing below — the same black photo set may have been used on both.' },
+  { barcode: 'P000613', name: 'Evolution in Design Slim Jean — Wheat', group: 'A',
+    shoot: 'Solid wheat/tan twill',
+    why: 'Both live images were a light blue jean covered in yellow rip-and-repair. EV-33300A exists in Grey, Ice Blue, Jet Black and Wheat only — no mended blue. No wheat image found anywhere online. Title also had to drop "Mended".' },
+  { barcode: '196539570128', name: 'Jordan Craig Washed Denim Short — Black Shadow', group: 'A',
+    shoot: 'Light blue vintage wash', flags: ['Title likely wrong'],
+    why: 'All 6 live images were a BLACK short. Four in-house shots agree it is light blue vintage wash. Notes are just J334S with no colour, so "Black Shadow" was guessed off the wrong photos. Covers +2 more sizes.' },
+  { barcode: 'P00034', name: 'Concept LA "Monroe" Jorts — Black Wash', group: 'A',
+    shoot: 'Black wash jort',
+    why: 'Live photo is a studio shot of the correct garment, but the wash reads far flatter and blacker than the piece on the rack. Owner\u2019s call: misleading. Also covers P00033.' },
+  { barcode: '2109250432', name: 'Politics "Cunningham 510" Baggy Cargo Denim', group: 'A',
+    shoot: 'Light blue vintage wash', flags: ['Title likely wrong'],
+    why: 'All 16 live images were the tobacco/khaki overdye colourway. Notes say CUNNINGHAM 510 DARK VINTAGE BLUE WASH and the in-house is light blue acid wash. Title still says "Tobacco Overdye". Also covers 2109250442 and P000516.' },
+  { barcode: '2919130232', name: 'Politics "Weaver 291" Baggy Cargo Jean', group: 'A',
+    shoot: 'Mustard / vintage yellow', flags: ['Title likely wrong'],
+    why: 'Images were self-consistent, but the garment is mustard-yellow while Notes and the title both say VINTAGE BLUE WASH. Shoot it and settle the colour name. Covers +2 more sizes.' },
+  { barcode: 'P00028', name: 'Prestige Flag Print Carpenter Denim Short', group: 'A',
+    shoot: 'Dark blue-grey with US/UK flag print',
+    why: 'Live studio shots are the right garment but read charcoal where the piece on the rack reads blue. Owner\u2019s call: misleading.' },
+  { barcode: 'P000627', name: 'Focus 5244 Premium Clean Slim Denim — Lt Vintage Wash', group: 'A',
+    shoot: 'Blue denim with heavy tan/vintage tinting',
+    why: 'Live image was a pale, nearly colourless off-white jean. On the rack it is blue with strong tan tinting — a customer would not recognise it. Covers +3 more sizes.' },
+  { barcode: 'P000189', name: 'KDNK Rhinestone Skinny Jean — Tinted Blue', group: 'A',
+    shoot: 'Blue base, dense allover rhinestones',
+    why: 'Live reads flat tan-gold and the rhinestones barely register; the piece is blue and heavily stoned. Covers +1 more size.' },
+  { barcode: 'P000211', name: 'KDNK Sigil Rhinestone Skinny Jean — Blue', group: 'A',
+    shoot: 'Blue with tan tint, sigil embroidery',
+    why: 'Same sigil embroidery in both, but live sits far into tan where the rack piece reads blue. Notes say BLUE SKINNY. Covers +3 more sizes.' },
+  { barcode: 'P000232', name: 'KDNK Everyday Wax Skinny Pant — Black', group: 'A',
+    shoot: 'Waxed black', flags: ['Colour unsettled'],
+    why: 'Notes say black, in-house reads grey, live reads dark olive-green. Nothing in the chain agrees — shoot it and settle the colour. Covers +3 more sizes.' },
+  { barcode: 'P000337', name: 'GFTD LA Vanta Denim — Black Coated', group: 'A',
+    shoot: 'Black waxed/coated denim',
+    why: 'In-house waxed denim reads charcoal, live reads flat black. Sibling of the Olive Coated listing above — the same black photo set may have been used on both. Covers +4 more sizes.' },
+
+  { barcode: 'P000366', name: 'KDNK Marble Print Skinny Jean — Light Blue', group: 'B', flags: ['Do sooner'],
+    why: 'Live is the supplier\u2019s WHOLESALE LINESHEET — model plus fabric-swatch and cuff insets, with "STYLE #: KND4766 / BLUE / PRINTED JEANS / SKINNY FIT" burned into the frame. That is someone else\u2019s document on the storefront. Covers +2 more sizes.' },
+  { barcode: 'P000154', name: 'KDNK SK103 Everyday Skinny Jean — Medium Grey', group: 'B', flags: ['Do sooner'],
+    why: 'Live is the supplier\u2019s WHOLESALE LINESHEET, same layout, "STYLE #: SK103 / M.GREY / BASIC JEANS" burned in. Covers +6 more sizes.' },
+  { barcode: 'P000050', name: 'KDNK Everyday Jean — Blue', group: 'B',
+    why: 'Live is a customer mirror selfie — hoodie up, phone in shot, dark room. Covers +5 more sizes.' },
+  { barcode: 'P000580', name: 'KDNK Forged Distress Skinny Jean — Light Blue', group: 'B',
+    why: 'Live is a lifestyle selfie — seated in a showroom, phone in hand. Covers +6 more sizes.' },
+  { barcode: '196539508206', name: 'See You in Paradise "Ultralight Beam" Denim — Sky Blue', group: 'B',
+    why: 'Live is an editorial outfit shot — the denim jacket dominates the frame, the jean is incidental. Covers +2 more sizes.' },
+  { barcode: 'P000404', name: 'Serenede "Beluga" Jean — Grey', group: 'B',
+    why: 'Live is a close-up of a knee. Not a product shot in any sense. Also appears on the Missing Photos list — one shoot covers both. Covers +1 more size.' },
+  { barcode: 'P000382', name: 'Syndicate Nylon Pant 3 — White/Grey', group: 'B', flags: ['May be wrong product'],
+    why: 'Live is a render of a full tracksuit — jacket AND pants — where the listing is a pant. Confirm which garment is actually on the rack before shooting. Covers +2 more sizes.' },
+  { barcode: 'P000492', name: 'W by Waimea Skinny Jean — Antique Industrial Wash', group: 'B',
+    why: 'Live is a lifestyle shot on a brown backdrop — clashes with every other product\u2019s white ground. Covers +1 more size.' },
+];
+
+const imListTabs = document.querySelectorAll('.im-list-tab');
+const imShootNote = document.getElementById('im-shoot-note');
+let activeListKey = 'missing';
+
+function activeList() {
+  return activeListKey === 'reshoot' ? RESHOOT_LIST : SHOT_LIST;
+}
+
+imListTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    imListTabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeListKey = tab.dataset.list;
+    imListSearch.value = '';
+    renderShotList('');
+  });
+});
+
 const imListStatus = document.getElementById('im-list-status');
 const imListSearch = document.getElementById('im-list-search');
 const imListEl = document.getElementById('im-list');
@@ -855,28 +962,60 @@ async function markShotListItemComplete(barcode) {
 
 function renderShotList(filterText) {
   imListEl.innerHTML = '';
+  const list = activeList();
   const q = (filterText || '').trim().toLowerCase();
-  const remaining = SHOT_LIST.filter(item => !completedBarcodes.has(item.barcode));
+  const remaining = list.filter(item => !completedBarcodes.has(item.barcode));
   const matches = q ? remaining.filter(item => item.name.toLowerCase().includes(q)) : remaining;
 
   matches.forEach(item => {
     const row = document.createElement('div');
     row.className = 'im-list-item';
+
     const nameEl = document.createElement('div');
     nameEl.className = 'im-list-item-brand';
     nameEl.textContent = item.name;
+    row.appendChild(nameEl);
+
     const bcEl = document.createElement('div');
     bcEl.className = 'im-list-item-notes';
     bcEl.textContent = item.barcode;
-    const priceEl = document.createElement('div');
-    priceEl.className = 'im-list-item-price';
-    priceEl.textContent = `$${item.price}`;
-    row.append(nameEl, bcEl, priceEl);
+    row.appendChild(bcEl);
+
+    if (item.group) {
+      const badgeWrap = document.createElement('div');
+      const groupBadge = document.createElement('span');
+      groupBadge.className = 'im-badge ' + (item.group === 'A' ? 'offline' : 'live');
+      groupBadge.textContent = item.group === 'A' ? 'Offline — draft' : 'Still live';
+      badgeWrap.appendChild(groupBadge);
+      (item.flags || []).forEach(f => {
+        const flagBadge = document.createElement('span');
+        flagBadge.className = 'im-badge flag';
+        flagBadge.textContent = f;
+        badgeWrap.appendChild(flagBadge);
+      });
+      row.appendChild(badgeWrap);
+    }
+
+    if (item.shoot) {
+      const shootEl = document.createElement('div');
+      shootEl.className = 'im-list-item-shoot';
+      shootEl.innerHTML = 'Shoot: <b></b>';
+      shootEl.querySelector('b').textContent = item.shoot;
+      row.appendChild(shootEl);
+    }
+
+    if (item.price) {
+      const priceEl = document.createElement('div');
+      priceEl.className = 'im-list-item-price';
+      priceEl.textContent = `$${item.price}`;
+      row.appendChild(priceEl);
+    }
+
     row.addEventListener('click', () => openImageManagerDetail(item.barcode));
     imListEl.appendChild(row);
   });
 
-  imListStatus.textContent = `${remaining.length} of ${SHOT_LIST.length} remaining${q ? ` — ${matches.length} matching` : ''}`;
+  imListStatus.textContent = `${remaining.length} of ${list.length} remaining${q ? ` — ${matches.length} matching` : ''}`;
 }
 
 imListSearch.addEventListener('input', () => renderShotList(imListSearch.value));
@@ -896,6 +1035,34 @@ imBackBtn.addEventListener('click', () => {
 async function openImageManagerDetail(barcode) {
   imListView.style.display = 'none';
   imDetailView.style.display = 'block';
+
+  // Reshoot items carry a colour-to-shoot and the reason the live photo was
+  // rejected — genuinely useful to read right before shooting, so it shows
+  // here rather than only in the list.
+  const reshoot = RESHOOT_LIST.find(i => i.barcode === barcode);
+  imShootNote.innerHTML = '';
+  if (reshoot) {
+    if (reshoot.shoot) {
+      const label = document.createElement('span');
+      label.className = 'sn-label';
+      label.textContent = 'Colour to shoot';
+      const shoot = document.createElement('div');
+      shoot.className = 'sn-shoot';
+      shoot.textContent = reshoot.shoot;
+      imShootNote.append(label, shoot);
+    }
+    const whyLabel = document.createElement('span');
+    whyLabel.className = 'sn-label';
+    whyLabel.textContent = reshoot.group === 'A' ? 'Why it was pulled' : 'What is live now';
+    const why = document.createElement('div');
+    why.className = 'sn-why';
+    why.textContent = reshoot.why;
+    imShootNote.append(whyLabel, why);
+    imShootNote.classList.add('show');
+  } else {
+    imShootNote.classList.remove('show');
+  }
+
   await loadImageManagerFor(barcode);
 }
 
