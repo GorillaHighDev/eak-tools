@@ -172,6 +172,20 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 .im-add-buttons button:disabled{opacity:.4}
 
 /* ---- Inventory Count ---- */
+#inv-direction{display:flex;gap:10px;margin-bottom:16px}
+.inv-dir-btn{
+  flex:1;padding:14px 8px;background:none;border:1.5px solid var(--line);color:var(--concrete);
+  border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.03em;
+  text-transform:uppercase;cursor:pointer;
+}
+.inv-dir-btn.active[data-dir="in"]{border-color:var(--good);color:var(--good);background:rgba(63,181,111,.08)}
+.inv-dir-btn.active[data-dir="out"]{border-color:var(--bred);color:var(--bred);background:rgba(195,37,28,.08)}
+#inv-count-value.positive{color:var(--good)}
+#inv-count-value.negative{color:var(--bred)}
+#inv-count-value.zero{color:var(--concrete)}
+.inv-log-count.positive{color:var(--good)}
+.inv-log-count.negative{color:var(--bred)}
+.inv-log-count.zero{color:var(--concrete)}
 #inv-barcode-input{
   width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;
   padding:14px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:1.1rem;text-align:center;
@@ -204,7 +218,7 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 <header>
   <a id="home-link" href="./index.html">← All Tools</a>
   <h1 class="display">Exclusive Tools Hub</h1>
-  <span class="mono">Style Lookup · Image Manager · Inventory Count</span>
+  <span class="mono">Style Lookup · Image Manager · Stock Changes</span>
 </header>
 
 <div id="onedrive-bar">
@@ -216,7 +230,7 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 <div id="mode-switcher">
   <button class="mode-tab active" type="button" data-mode="style-lookup">Style Lookup</button>
   <button class="mode-tab" type="button" data-mode="image-manager">Image Manager</button>
-  <button class="mode-tab" type="button" data-mode="inventory">Inventory Count</button>
+  <button class="mode-tab" type="button" data-mode="inventory">Stock Changes</button>
 </div>
 
 <main>
@@ -277,14 +291,18 @@ main{max-width:520px;margin:0 auto;padding:24px 5vw 12vh}
 </div>
 
 <div id="mode-inventory" class="mode-panel">
+  <div id="inv-direction">
+    <button type="button" class="inv-dir-btn active" data-dir="in">Stock In (+1)</button>
+    <button type="button" class="inv-dir-btn" data-dir="out">Sale (−1)</button>
+  </div>
   <input type="text" id="inv-barcode-input" placeholder="Scan a barcode" autocomplete="off">
   <div id="inv-result">
     <div id="inv-count-value">0</div>
-    <div id="inv-count-label">Current Count</div>
+    <div id="inv-count-label">Pending Change</div>
     <div id="inv-item-context"></div>
   </div>
   <div id="inv-log"></div>
-  <button type="button" id="inv-reset-btn">Start New Count</button>
+  <button type="button" id="inv-reset-btn">Clear Pending Changes</button>
 </div>
 </main>
 
@@ -1043,13 +1061,14 @@ imLibraryInput.addEventListener('change', () => {
 
 initImageManagerList();
 
-// ==================== INVENTORY COUNT ====================
-// Separate file from pricing-master.csv on purpose — this tracks a physical
-// count, not price/style data, and shouldn't be touched by anything that
-// scans pricing-csv/. Scans are processed through a queue, one at a time,
-// each reading the truest latest count before incrementing and saving —
-// this is what keeps rapid-fire scanning from racing and losing increments.
-const INVENTORY_CSV_PATH = 'inventory-count/inventory-count.csv';
+// ==================== INVENTORY ADJUSTMENTS ====================
+// Records a NET CHANGE per barcode (can be negative), not an absolute count.
+// This matters: an absolute count pushed to Shopify would OVERWRITE stock,
+// but "3 sold today" needs Shopify's current number reduced by 3, not set to
+// 3. Claude Code applies these as adjustments; barcodes with no row here are
+// never touched. Scans run through a queue so rapid-fire scanning can't race
+// and lose changes — each reads the latest saved state before adjusting.
+const INVENTORY_CSV_PATH = 'inventory-count/inventory-changes.csv';
 
 const invBarcodeInput = document.getElementById('inv-barcode-input');
 const invResult = document.getElementById('inv-result');
@@ -1057,8 +1076,29 @@ const invCountValue = document.getElementById('inv-count-value');
 const invItemContext = document.getElementById('inv-item-context');
 const invLog = document.getElementById('inv-log');
 const invResetBtn = document.getElementById('inv-reset-btn');
+const invDirBtns = document.querySelectorAll('.inv-dir-btn');
 
 let inventoryQueue = Promise.resolve();
+let invDirection = 'in'; // 'in' = +1 (new stock), 'out' = -1 (offline sale)
+
+invDirBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    invDirBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    invDirection = btn.dataset.dir;
+    invBarcodeInput.focus();
+  });
+});
+
+function signClass(n) {
+  if (n > 0) return 'positive';
+  if (n < 0) return 'negative';
+  return 'zero';
+}
+
+function formatChange(n) {
+  return n > 0 ? `+${n}` : String(n);
+}
 
 invBarcodeInput.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
@@ -1066,10 +1106,11 @@ invBarcodeInput.addEventListener('keydown', (e) => {
   const val = invBarcodeInput.value.trim();
   if (!val) return;
   invBarcodeInput.value = '';
-  inventoryQueue = inventoryQueue.then(() => processInventoryScan(val));
+  const dirAtScan = invDirection; // capture now — the queue may run later
+  inventoryQueue = inventoryQueue.then(() => processInventoryScan(val, dirAtScan));
 });
 
-async function processInventoryScan(barcode) {
+async function processInventoryScan(barcode, direction) {
   if (!msalInstance.getActiveAccount()) {
     alert('Connect OneDrive first.');
     return;
@@ -1085,22 +1126,28 @@ async function processInventoryScan(barcode) {
   }
 
   const rowMap = new Map();
-  rows.forEach(r => rowMap.set(r[0], parseInt(r[1], 10) || 0));
-  const newCount = (rowMap.get(barcode) || 0) + 1;
-  rowMap.set(barcode, newCount);
+  rows.forEach(r => { if (r[0]) rowMap.set(r[0], parseInt(r[1], 10) || 0); });
+  const delta = direction === 'out' ? -1 : 1;
+  const newChange = (rowMap.get(barcode) || 0) + delta;
 
-  const allRows = [['Barcode', 'Count'], ...[...rowMap.entries()].map(([bc, c]) => [bc, String(c)])];
+  // A barcode back at net zero is removed entirely — no row means "don't
+  // touch this item in Shopify", which is exactly right for a no-op.
+  if (newChange === 0) rowMap.delete(barcode);
+  else rowMap.set(barcode, newChange);
+
+  const allRows = [['Barcode', 'Change'], ...[...rowMap.entries()].map(([bc, c]) => [bc, String(c)])];
   const csvContent = allRows.map(row => row.map(csvEscape).join(',')).join('\r\n');
   const ok = await uploadToOneDrive(INVENTORY_CSV_PATH, csvContent, 'text/csv');
 
   if (!ok) {
-    alert(`Couldn\u2019t save the count for ${barcode} — try scanning it again.`);
+    alert(`Couldn\u2019t save the change for ${barcode} — try scanning it again.`);
     return;
   }
 
   const known = allItems.find(i => i.barcode === barcode);
 
-  invCountValue.textContent = newCount;
+  invCountValue.textContent = formatChange(newChange);
+  invCountValue.className = signClass(newChange);
   invItemContext.textContent = known
     ? `${known.brand || ''}${known.size ? ' · ' + known.size : ''}`.trim()
     : '(not in price book)';
@@ -1110,10 +1157,10 @@ async function processInventoryScan(barcode) {
   row.className = 'inv-log-row';
   const bcSpan = document.createElement('span');
   bcSpan.className = 'inv-log-bc';
-  bcSpan.textContent = barcode;
+  bcSpan.textContent = `${barcode} ${delta > 0 ? '↑' : '↓'}`;
   const countSpan = document.createElement('span');
-  countSpan.className = 'inv-log-count';
-  countSpan.textContent = `= ${newCount}`;
+  countSpan.className = 'inv-log-count ' + signClass(newChange);
+  countSpan.textContent = formatChange(newChange);
   row.append(bcSpan, countSpan);
   invLog.appendChild(row);
 }
@@ -1123,7 +1170,7 @@ invResetBtn.addEventListener('click', () => {
     alert('Connect OneDrive first.');
     return;
   }
-  if (!confirm('Start a new count? This archives the current count and resets everything to 0.')) return;
+  if (!confirm('Clear pending changes? This archives them first — do this after they\u2019ve been pushed to Shopify.')) return;
 
   inventoryQueue = inventoryQueue.then(async () => {
     invResetBtn.disabled = true;
@@ -1133,24 +1180,24 @@ invResetBtn.addEventListener('click', () => {
     if (result.status === 'ok') {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const archived = await uploadToOneDrive(
-        `inventory-count/archive/inventory-count-${timestamp}.csv`,
+        `inventory-count/archive/inventory-changes-${timestamp}.csv`,
         result.text,
         'text/csv'
       );
       if (!archived) {
-        alert('Could not archive the current count — nothing was reset, try again.');
+        alert('Could not archive the pending changes — nothing was cleared, try again.');
         invResetBtn.disabled = false;
-        invResetBtn.textContent = 'Start New Count';
+        invResetBtn.textContent = 'Clear Pending Changes';
         return;
       }
     }
 
-    await uploadToOneDrive(INVENTORY_CSV_PATH, 'Barcode,Count\r\n', 'text/csv');
+    await uploadToOneDrive(INVENTORY_CSV_PATH, 'Barcode,Change\r\n', 'text/csv');
 
     invLog.innerHTML = '';
     invResult.classList.remove('show');
     invResetBtn.disabled = false;
-    invResetBtn.textContent = 'Start New Count';
+    invResetBtn.textContent = 'Clear Pending Changes';
   });
 });
 </script>
