@@ -1,81 +1,181 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>EAK Tools</title>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>EAK Ops</title>
+<meta name="description" content="Internal map of the systems Exclusive Apparel &amp; Kicks runs on, and how to check each one.">
+<link rel="icon" href="eak-logo.png">
+<link rel="apple-touch-icon" href="eak-logo.png">
+<meta name="theme-color" content="#14141A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&display=swap">
 <style>
 :root{
-  --ink:#0D0D0F; --panel:#17171B; --paper:#F2F0EB; --concrete:#8C897F;
-  --gold:#D9A22E; --bred:#C3251C; --line:rgba(242,240,235,.12);
+  --ink:#14141A; --ink-2:#1C1C24; --line:rgba(246,245,242,.13);
+  --paper:#F6F5F2; --muted:#9A9AA6; --red:#D81C1C; --ok:#3FA45B;
+  --display:'Barlow Condensed',system-ui,sans-serif;
+  --body:'Inter',system-ui,-apple-system,sans-serif;
 }
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%}
-body{margin:0;background:var(--ink);color:var(--paper);font-family:'Space Grotesk',sans-serif;
-  -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;min-height:100vh}
-.display{font-family:'Anton',sans-serif;text-transform:uppercase}
-.mono{font-family:'IBM Plex Mono',monospace}
-
-header{padding:32px 5vw 20px;text-align:center;border-bottom:1px solid var(--line)}
-header h1{font-size:1.6rem;color:#fff;margin:0 0 6px;letter-spacing:.02em}
-header .mono{font-size:.68rem;letter-spacing:.14em;color:var(--gold);text-transform:uppercase}
-
-main{flex:1;max-width:520px;margin:0 auto;width:100%;padding:32px 6vw 10vh;
-  display:flex;flex-direction:column;gap:16px}
-
-a.tool{
-  display:block;text-decoration:none;background:var(--panel);border:1px solid var(--line);
-  border-radius:12px;padding:22px 20px;position:relative;transition:border-color .15s;
-}
-a.tool:active{border-color:var(--gold)}
-a.tool .step{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;
-  color:var(--gold);text-transform:uppercase;margin-bottom:6px}
-a.tool .name{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:1.3rem;color:#fff;
-  letter-spacing:.01em;margin-bottom:4px}
-a.tool .desc{font-size:.82rem;color:var(--concrete);line-height:1.4}
-a.tool .arrow{position:absolute;right:20px;top:50%;transform:translateY(-50%);color:var(--gold);
-  font-size:1.4rem}
-
-footer{text-align:center;padding:0 6vw 24px;font-size:.72rem;color:var(--concrete)}
-footer .mono{font-family:'IBM Plex Mono',monospace}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--body);font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;padding:0 16px env(safe-area-inset-bottom,24px)}
+.wrap{max-width:720px;margin:0 auto}
+header{padding:28px 0 18px;border-bottom:1px solid var(--line)}
+h1{font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.01em;
+  font-size:2rem;line-height:1;margin:0 0 6px}
+h1 span{color:var(--red)}
+.sub{color:var(--muted);font-size:13px;margin:0}
+.sub a{color:var(--muted)}
+h2{font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  font-size:1.05rem;margin:30px 0 10px;color:var(--paper)}
+h2::before{content:"";display:inline-block;width:14px;height:2px;background:var(--red);
+  vertical-align:middle;margin-right:9px;transform:translateY(-3px)}
+.card{background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:14px 15px;margin:0 0 10px}
+.card h3{font-size:14px;font-weight:600;margin:0 0 4px}
+.card p{margin:0;color:var(--muted);font-size:13.5px}
+.card p + p{margin-top:6px}
+.when{font-family:var(--display);font-size:15px;letter-spacing:.04em;text-transform:uppercase;color:var(--paper);
+  float:right;margin-left:12px}
+a{color:#8FB8FF;text-decoration:none;border-bottom:1px solid rgba(143,184,255,.3)}
+a:hover{border-bottom-color:#8FB8FF}
+.btn{display:block;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;
+  padding:14px 15px;margin:0 0 8px;color:var(--paper);border-bottom:1px solid var(--line)}
+.btn b{display:block;font-size:14.5px;font-weight:600}
+.btn span{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.btn:hover{border-color:rgba(246,245,242,.3)}
+ul{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px}
+li{margin:0 0 7px}
+li b{color:var(--paper);font-weight:600}
+.facts{display:grid;grid-template-columns:1fr;gap:8px}
+@media(min-width:560px){.facts{grid-template-columns:1fr 1fr}}
+.warn{border-left:3px solid var(--red)}
+footer{margin:34px 0 10px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+  background:rgba(246,245,242,.07);padding:1px 5px;border-radius:4px;color:var(--paper)}
 </style>
 </head>
 <body>
+<div class="wrap">
 
 <header>
-  <h1>EAK Tools</h1>
-  <div class="mono">Exclusive Apparel &amp; Kicks · Catalog Intake</div>
+  <h1>EAK <span>Ops</span></h1>
+  <p class="sub">Where everything runs, and how to check it. Internal reference — not a shop.<br>
+  The store is <a href="https://www.exclusiveclothing.shop">exclusiveclothing.shop</a>.</p>
 </header>
 
-<main>
-  <a class="tool" href="./eak-pricing-round-mobile.html">
-    <div class="step">One Sweep</div>
-    <div class="name">Pricing &amp; Photos</div>
-    <div class="desc">Scan every size, set price once, shoot photos once. Export CSV when the round is done.</div>
-    <div class="arrow">→</div>
-  </a>
+<h2>Runs on its own</h2>
 
-  <a class="tool" href="./eak-price-check-mobile.html">
-    <div class="step">Floor Tool</div>
-    <div class="name">Price Check</div>
-    <div class="desc">Scan any priced item, hear the price read aloud instantly.</div>
-    <div class="arrow">→</div>
-  </a>
+<div class="card">
+  <span class="when">3:37am</span>
+  <h3>Nightly fit refresh</h3>
+  <p>Rebuilds the fit engine, kids tags, Fit of the Day pool, markdown sort, new-arrival order, colourways and fit
+  guides, then dumps analytics. GitHub Actions, daily.</p>
+  <p><b>Check it:</b> the run should leave a commit named <code>nightly: fit engine state &lt;date&gt;</code>. No commit
+  for last night = it failed or was queued.</p>
+</div>
 
-  <a class="tool" href="./eak-intake-capture-mobile.html">
-    <div class="step">Admin Tools</div>
-    <div class="name">Tools Hub</div>
-    <div class="desc">Style Lookup, Image Manager, and Inventory Count — three tools, one page.</div>
-    <div class="arrow">→</div>
-  </a>
-</main>
+<div class="card">
+  <span class="when">every 2h</span>
+  <h3>New arrivals order</h3>
+  <p>Keeps a product received during the day in the right place on the New Arrivals wall instead of waiting for the
+  nightly. Odd hours.</p>
+</div>
+
+<div class="card">
+  <span class="when">6:23 &times;2</span>
+  <h3>Store backup</h3>
+  <p>Full snapshot — every product plus the live theme's files — morning and evening, kept 60 days as a downloadable
+  artifact on the run page. Images are URLs only; the files themselves live on Shopify.</p>
+</div>
+
+<div class="card">
+  <span class="when">15 min</span>
+  <h3>Cloudflare worker crons</h3>
+  <p>Size-order sweep once a night, cart-text reminders every 15 minutes. Separate from the above and unaffected by
+  anything on the shop PC.</p>
+</div>
+
+<div class="card warn">
+  <h3>Nothing runs on the shop PC</h3>
+  <p>Since 23 Sep 2026. The four Windows scheduled tasks are disabled on purpose — re-enabling one makes the same
+  writes happen twice, from the PC and from the cloud. The PC being off is no longer a problem.</p>
+</div>
+
+<h2>Systems</h2>
+
+<a class="btn" href="https://admin.shopify.com">
+  <b>Shopify admin</b>
+  <span>Products, orders, discounts, themes, Messaging automations, Inbox, apps. The catalog of record — when a file
+  disagrees with live, live is right.</span>
+</a>
+<a class="btn" href="https://eak-stock.gorillahighdev.workers.dev">
+  <b>Phone tool</b>
+  <span>Sell · Restock · Count · Receive · Photo · Curate · Pack · Link · Discount. PIN-gated. Add to your home
+  screen; force-refresh after an update.</span>
+</a>
+<a class="btn" href="https://eak-stock.gorillahighdev.workers.dev/analytics">
+  <b>Analytics dashboard</b>
+  <span>Real shoppers only — bots and staff filtered out. Checkout errors, by-state funnel, searches with zero
+  results, page behaviour, paid traffic quality.</span>
+</a>
+<a class="btn" href="https://github.com/GorillaHighDev/eak-ops/actions">
+  <b>Scheduled jobs</b>
+  <span>Every run, its log and its artifacts, kept 90 days. Green means last night worked. Private repo — sign in
+  first.</span>
+</a>
+<a class="btn" href="https://dash.cloudflare.com">
+  <b>Cloudflare</b>
+  <span>The worker behind the phone tool, the analytics store, and the pixel that feeds it.</span>
+</a>
+<a class="btn" href="https://search.google.com/search-console">
+  <b>Search Console</b>
+  <span>What Google indexed, and where to ask for a re-crawl after a price or copy change.</span>
+</a>
+
+<h2>When something looks wrong</h2>
+<ul>
+  <li><b>"Complete the fit" is empty on product pages</b> — the nightly rebuild didn't run. Check the Actions tab
+  before assuming the engine broke.</li>
+  <li><b>A sold-out product is still in a grid</b> — collection rules carry <em>inventory &gt; 0</em>; a handful of
+  OR-rule collections hide sold-out cards in the theme instead. The product stays live either way.</li>
+  <li><b>A storefront change doesn't show</b> — pages are cached for minutes, and a gated store still returns 200.
+  Re-check with a cache-buster before changing anything else.</li>
+  <li><b>The phone tool looks out of date</b> — it's a saved web app: force-refresh it after an update.</li>
+  <li><b>A marketing text won't send</b> — editing an SMS puts it back to Draft; turn it on again. A second marketing
+  text to the same person within a few hours is refused.</li>
+  <li><b>Four emails suddenly paused</b> — editing the TAPIN15 discount pauses every automation that references it.
+  Check Messaging → Automations for the red icon.</li>
+</ul>
+
+<h2>Rollbacks</h2>
+<ul>
+  <li><b>The site looks wrong after a theme change</b> — publish the previous theme from Online Store → Themes. Each
+  big change leaves a dated backup theme.</li>
+  <li><b>The cloud jobs stop</b> — the Windows tasks still exist on the shop PC, disabled. Re-enable them and turn
+  the workflows off, never both at once.</li>
+</ul>
+
+<h2>House facts</h2>
+<div class="facts">
+  <div class="card"><h3>Floor</h3><p>Sun–Thu 9am–9pm · Fri–Sat 9am–10pm Central<br>2008 Airline Dr, Suite 100,
+  Bossier City, LA 71111</p></div>
+  <div class="card"><h3>Contact</h3><p>Text <b>(318) 355-0844</b><br>Call <b>(318) 459-6774</b> — landline, never
+  text it<br>info@ExclusiveClothing.shop</p></div>
+  <div class="card"><h3>Shipping</h3><p>Order by <b>2pm Central</b>, Mon–Sat, ships same day<br>UPS Ground $6.95,
+  free at $80 and up · Expedited $19.95</p></div>
+  <div class="card"><h3>Returns</h3><p>30 days from delivery to <b>exchange</b> — another size or store credit.
+  Customer pays return shipping, or brings it in. No cash refunds.</p></div>
+</div>
 
 <footer>
-  <div class="mono">Add this page to your Home Screen for one-tap access</div>
+  Last verified 23 Sep 2026. This page is a map, not a control panel: it holds no codes, keys or PINs, and every
+  link above asks you to sign in.
 </footer>
 
+</div>
 </body>
 </html>
